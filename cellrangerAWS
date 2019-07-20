@@ -2,14 +2,22 @@
 
 set -o pipefail -o errexit
 
+
+
+# Set global variables
 CLUSTER_NAME=cluster-$(openssl rand -hex 3)
-VOLUME_SIZE=300
 TYPE=t2.2xlarge
+VOLUME_SIZE=300
+CREATE_VOL=true
+DELETE_VOL=false
 VPC=vpc-08e5da3a70036dbdb
 SUBNETS=subnet-083bed60175393149,subnet-0f6fea1e5eebab925
 IMAGE=078941922927.dkr.ecr.us-west-2.amazonaws.com/cellranger:latest
 TASK_DEF=cellranger:4
 
+
+
+# Usage message
 usage() {
     echo """
 
@@ -21,12 +29,17 @@ OPTIONS
 -i, input directory containing fastq files and config.yaml or EBS volume ID
 -o, output directory
 -k, path to AWS private key
--t, EC2 instance type (default is t2.2xlarge)
+-t, EC2 instance type (default is ...)
+-s, size of EBS volume (default is 300G)
+-d, should the EBS volume be deleted after the run? (optional)
 
     """
 }
 
-while getopts ":i:o:k:th" args
+
+
+# Parse arguments
+while getopts ":hi:o:k:t:s:d" args
 do
     case $args in
         h)
@@ -35,15 +48,26 @@ do
             ;;
         i) 
             INPUT=$OPTARG
+
+	    if [[ $INPUT =~ ^vol\-[[:alnum:]]+$ ]]
+            then
+                CREATE_VOL=false
+            fi
             ;;
         o)
             OUTPUT=$OPTARG
             ;;
         k)
-            KEY_PATH=$OPTARG
+            KEY=$OPTARG
             ;;
         t)
             TYPE=$OPTARG
+            ;;
+        s)
+            VOLUME_SIZE=$OPTARG
+            ;;
+        d)
+            DELETE_VOL=true
             ;;
         :)
             echo -e "\nERROR: -$OPTARG requires an argument"
@@ -60,31 +84,29 @@ done
 if [[ -z $INPUT ]]
 then
     usage
-    exit 1
+    exit 0
 fi
 
-TASK_NAME=$(echo $TASK_DEF | cut -d ":" -f 1)
-KEY=$(basename -s .pem $KEY_PATH)
 
-echo $INPUT
-echo $OUTPUT
-echo $KEY_PATH
-echo $TYPE
+#echo $INPUT
+#echo $OUTPUT
+#echo $KEY
+#echo $TYPE
+#echo $VOLUME_SIZE
+#echo $CREATE_VOL
+#echo $DELETE_VOL
 
 exit 0
 
-#INPUT=~/dockerfiles/PIPELINE/raw_data
-#INPUT=vol-0e1d6f67c992e050e
-#OUTPUT=~/OUTPUT
-#KEY_PATH=~/.ssh/sheridar-key-pair-uswest2.pem
-
 # Launch ECS container instance
+key_name=$(basename -s .pem $KEY)
+
 ecs-cli up \
     --cluster $CLUSTER_NAME \
     --region us-west-2 \
     --launch-type EC2 \
     --instance-type $TYPE \
-    --keypair $KEY \
+    --keypair $key_name \
     --instance-role ecsInstanceRole \
     --vpc $VPC \
     --subnets $SUBNETS \
@@ -125,13 +147,13 @@ ssh=ec2-user@$pub_dns
 
 # Retrieve metadata for EC2 instance
 ec2_id=$(
-    ssh -o "StrictHostKeyChecking no" -i $KEY_PATH $ssh \
+    ssh -o "StrictHostKeyChecking no" -i $KEY $ssh \
         ec2-metadata -i \
         | grep -E -o "i\-[[:alnum:]]+"
 )
 
 avail_zone=$(
-    ssh -i $KEY_PATH $ssh \
+    ssh -i $KEY $ssh \
         ec2-metadata -z \
 	| grep -E -o "us\-[[:alnum:]\-]+"
 )
@@ -139,7 +161,7 @@ avail_zone=$(
 
 
 # Create and attach EBS volume
-if [[ -d $INPUT ]]
+if [[ $CREATE_VOL == true ]]
 then
     vol_id=$(
         aws ec2 create-volume \
@@ -161,80 +183,97 @@ aws ec2 attach-volume \
 
 
 # Format new EBS volume
-if [[ -d $INPUT ]]
+if [[ $CREATE_VOL == true ]]
 then
-    ssh -o "StrictHostKeyChecking no" -i $KEY_PATH $ssh \
+    ssh -o "StrictHostKeyChecking no" -i $KEY $ssh \
         sudo yum -y install parted
 
-    ssh -i $KEY_PATH $ssh \
+    ssh -i $KEY $ssh \
         sudo parted /dev/sdh mklabel gpt
 
-    ssh -i $KEY_PATH $ssh \
+    ssh -i $KEY $ssh \
 	sudo parted -a opt /dev/sdh mkpart primary ext4 0% 100%
 
-    ssh -i $KEY_PATH $ssh \
+    ssh -i $KEY $ssh \
 	sudo mkfs.ext4 /dev/sdh
 fi
 
 
 
 # Mount EBS volume and transfer data
-ssh -i $KEY_PATH $ssh \
+ssh -i $KEY $ssh \
     sudo mkdir -p /mnt/ebs_vol
 
-ssh -i $KEY_PATH $ssh \
+ssh -i $KEY $ssh \
     sudo mount /dev/sdh /mnt/ebs_vol
 
-ssh -i $KEY_PATH $ssh \
+ssh -i $KEY $ssh \
     sudo mkdir -p /mnt/ebs_vol/INPUT
 
-ssh -i $KEY_PATH $ssh \
+ssh -i $KEY $ssh \
     sudo chmod -R 777 /mnt
 
-if [[ -d $INPUT ]]
+if [[ $CREATE_VOL == true ]]
 then
-    scp -i $KEY_PATH $INPUT/*.fastq.gz $ssh:/mnt/ebs_vol/INPUT
+    scp -i $KEY $INPUT/*.fastq.gz $ssh:/mnt/ebs_vol/INPUT
 fi
 
 
 
 # Create and run new docker container with mounted EBS volume
+task_name=$(echo $TASK_DEF | cut -d ":" -f 1)
+
 container=$(
-    ssh -i $KEY_PATH $ssh \
-        docker ps -a | grep -E -o "ecs-$TASK_NAME[[:alnum:]\-]+"
+    ssh -i $KEY $ssh \
+        docker ps -a | grep -E -o "ecs-$task_name[[:alnum:]\-]+"
 )
 
-ssh -i $KEY_PATH $ssh \
+ssh -i $KEY $ssh \
     docker stop $container
 
-ssh -i $KEY_PATH $ssh \
+ssh -i $KEY $ssh \
     docker rm  $container
 
-ssh -i $KEY_PATH $ssh \
+ssh -i $KEY $ssh \
     docker run -d --name $container -v /mnt/ebs_vol/INPUT:/INPUT $IMAGE
 
 
 
 # Run cellranger
-#ssh -i $KEY_PATH $ssh \
+#ssh -i $KEY $ssh \
 #    docker exec $container bash /PIPELINE/RUN.sh \
 #    > $OUTPUT/cellranger.out \
 #    2> $OUTPUT/cellranger.err
-ssh -i $KEY_PATH $ssh \
+ssh -i $KEY $ssh \
     docker exec $container cp /PIPELINE/RUN.sh /RESULTS
 
 
 
 # Transfer results to local machine
-ssh -i $KEY_PATH $ssh \
+ssh -i $KEY $ssh \
     docker container cp $container:/RESULTS /home/ec2-user
 
-scp -i $KEY_PATH $ssh:/home/ec2-user/RESULTS/* $OUTPUT
+scp -i $KEY $ssh:/home/ec2-user/RESULTS/* $OUTPUT
 
 
 
 # Shutdown EC2 cluster
 #ecs-cli down --force --cluster $CLUSTER_NAME
+
+if [[ $DELETE_VOL == true ]]
+then
+    aws ec2 delete-volume \
+        --volume-id $vol_id
+fi
+
+
+
+
+
+
+
+
+
 
 
 
@@ -243,9 +282,9 @@ scp -i $KEY_PATH $ssh:/home/ec2-user/RESULTS/* $OUTPUT
 
 #for i in $(seq 1 240)
 #do
-#    name_regex="ecs-$TASK_NAME[[:alnum:]\-]+"
+#    name_regex="ecs-$task_name[[:alnum:]\-]+"
 #    containers=$(
-#        ssh -i $KEY_PATH $ssh \
+#        ssh -i $KEY $ssh \
 #            docker ps -a
 #    )
 #    if echo $containers | grep -E -q "$name_regex"
@@ -256,10 +295,10 @@ scp -i $KEY_PATH $ssh:/home/ec2-user/RESULTS/* $OUTPUT
 #        sleep 10
 #    fi
 #done
-
-#ssh -i $KEY_PATH $ssh \
+#
+#ssh -i $KEY $ssh \
 #    docker cp /mnt/ebs_vol/INPUT $container:/
-
+#
 #batchit submit \
 #    --image 078941922927.dkr.ecr.us-west-2.amazonaws.com/cellranger \
 #    --role  AWSBatchServiceRole \
