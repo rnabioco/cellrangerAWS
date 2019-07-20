@@ -1,0 +1,270 @@
+#! /bin/bash
+
+set -o pipefail -o errexit
+
+CLUSTER_NAME=cluster-$(openssl rand -hex 3)
+VOLUME_SIZE=300
+TYPE=t2.2xlarge
+VPC=vpc-08e5da3a70036dbdb
+SUBNETS=subnet-083bed60175393149,subnet-0f6fea1e5eebab925
+IMAGE=078941922927.dkr.ecr.us-west-2.amazonaws.com/cellranger:latest
+TASK_DEF=cellranger:4
+
+usage() {
+    echo """
+
+USAGE
+$0 [OPTIONS]
+
+OPTIONS
+-h, display this message
+-i, input directory containing fastq files and config.yaml or EBS volume ID
+-o, output directory
+-k, path to AWS private key
+-t, EC2 instance type (default is t2.2xlarge)
+
+    """
+}
+
+while getopts ":i:o:k:th" args
+do
+    case $args in
+        h)
+            usage
+            exit 0
+            ;;
+        i) 
+            INPUT=$OPTARG
+            ;;
+        o)
+            OUTPUT=$OPTARG
+            ;;
+        k)
+            KEY_PATH=$OPTARG
+            ;;
+        t)
+            TYPE=$OPTARG
+            ;;
+        :)
+            echo -e "\nERROR: -$OPTARG requires an argument"
+            usage
+	    exit 1
+            ;;
+	*) 
+            usage
+	    exit 1
+            ;;
+    esac
+done
+
+if [[ -z $INPUT ]]
+then
+    usage
+    exit 1
+fi
+
+TASK_NAME=$(echo $TASK_DEF | cut -d ":" -f 1)
+KEY=$(basename -s .pem $KEY_PATH)
+
+echo $INPUT
+echo $OUTPUT
+echo $KEY_PATH
+echo $TYPE
+
+exit 0
+
+#INPUT=~/dockerfiles/PIPELINE/raw_data
+#INPUT=vol-0e1d6f67c992e050e
+#OUTPUT=~/OUTPUT
+#KEY_PATH=~/.ssh/sheridar-key-pair-uswest2.pem
+
+# Launch ECS container instance
+ecs-cli up \
+    --cluster $CLUSTER_NAME \
+    --region us-west-2 \
+    --launch-type EC2 \
+    --instance-type $TYPE \
+    --keypair $KEY \
+    --instance-role ecsInstanceRole \
+    --vpc $VPC \
+    --subnets $SUBNETS \
+    --port 22
+
+for i in $(seq 1 240)
+do
+    ecs_insts=$(aws ecs list-container-instances --cluster $CLUSTER_NAME)
+
+    if echo $ecs_insts | grep -q "container-instance"
+    then
+        break
+    else
+        sleep 10
+    fi
+done    
+
+
+
+# Start task to run docker container in ECS instance 
+aws ecs run-task \
+    --cluster $CLUSTER_NAME \
+    --task-definition $TASK_DEF
+
+
+
+# Retrieve public DNS for ssh 
+pub_dns=$(
+    aws ec2 describe-instances \
+        --filters Name=tag:Name,Values="ECS Instance - amazon-ecs-cli-setup-$CLUSTER_NAME" \
+        | grep -o -E "ec2-.+compute.amazonaws.com" \
+        | head -n 1
+)
+
+ssh=ec2-user@$pub_dns
+
+
+
+# Retrieve metadata for EC2 instance
+ec2_id=$(
+    ssh -o "StrictHostKeyChecking no" -i $KEY_PATH $ssh \
+        ec2-metadata -i \
+        | grep -E -o "i\-[[:alnum:]]+"
+)
+
+avail_zone=$(
+    ssh -i $KEY_PATH $ssh \
+        ec2-metadata -z \
+	| grep -E -o "us\-[[:alnum:]\-]+"
+)
+
+
+
+# Create and attach EBS volume
+if [[ -d $INPUT ]]
+then
+    vol_id=$(
+        aws ec2 create-volume \
+            --availability-zone $avail_zone \
+	    --size $VOLUME_SIZE \
+	    | grep -E -o "vol\-[[:alnum:]]+"
+    )
+
+    sleep 60
+else
+    vol_id=$INPUT
+fi
+
+aws ec2 attach-volume \
+    --instance-id $ec2_id \
+    --volume-id $vol_id \
+    --device /dev/sdh
+
+
+
+# Format new EBS volume
+if [[ -d $INPUT ]]
+then
+    ssh -o "StrictHostKeyChecking no" -i $KEY_PATH $ssh \
+        sudo yum -y install parted
+
+    ssh -i $KEY_PATH $ssh \
+        sudo parted /dev/sdh mklabel gpt
+
+    ssh -i $KEY_PATH $ssh \
+	sudo parted -a opt /dev/sdh mkpart primary ext4 0% 100%
+
+    ssh -i $KEY_PATH $ssh \
+	sudo mkfs.ext4 /dev/sdh
+fi
+
+
+
+# Mount EBS volume and transfer data
+ssh -i $KEY_PATH $ssh \
+    sudo mkdir -p /mnt/ebs_vol
+
+ssh -i $KEY_PATH $ssh \
+    sudo mount /dev/sdh /mnt/ebs_vol
+
+ssh -i $KEY_PATH $ssh \
+    sudo mkdir -p /mnt/ebs_vol/INPUT
+
+ssh -i $KEY_PATH $ssh \
+    sudo chmod -R 777 /mnt
+
+if [[ -d $INPUT ]]
+then
+    scp -i $KEY_PATH $INPUT/*.fastq.gz $ssh:/mnt/ebs_vol/INPUT
+fi
+
+
+
+# Create and run new docker container with mounted EBS volume
+container=$(
+    ssh -i $KEY_PATH $ssh \
+        docker ps -a | grep -E -o "ecs-$TASK_NAME[[:alnum:]\-]+"
+)
+
+ssh -i $KEY_PATH $ssh \
+    docker stop $container
+
+ssh -i $KEY_PATH $ssh \
+    docker rm  $container
+
+ssh -i $KEY_PATH $ssh \
+    docker run -d --name $container -v /mnt/ebs_vol/INPUT:/INPUT $IMAGE
+
+
+
+# Run cellranger
+#ssh -i $KEY_PATH $ssh \
+#    docker exec $container bash /PIPELINE/RUN.sh \
+#    > $OUTPUT/cellranger.out \
+#    2> $OUTPUT/cellranger.err
+ssh -i $KEY_PATH $ssh \
+    docker exec $container cp /PIPELINE/RUN.sh /RESULTS
+
+
+
+# Transfer results to local machine
+ssh -i $KEY_PATH $ssh \
+    docker container cp $container:/RESULTS /home/ec2-user
+
+scp -i $KEY_PATH $ssh:/home/ec2-user/RESULTS/* $OUTPUT
+
+
+
+# Shutdown EC2 cluster
+#ecs-cli down --force --cluster $CLUSTER_NAME
+
+
+
+
+
+
+#for i in $(seq 1 240)
+#do
+#    name_regex="ecs-$TASK_NAME[[:alnum:]\-]+"
+#    containers=$(
+#        ssh -i $KEY_PATH $ssh \
+#            docker ps -a
+#    )
+#    if echo $containers | grep -E -q "$name_regex"
+#    then
+#        container=$(echo $containers | grep -E -o "$name_regex")
+#        break
+#    else
+#        sleep 10
+#    fi
+#done
+
+#ssh -i $KEY_PATH $ssh \
+#    docker cp /mnt/ebs_vol/INPUT $container:/
+
+#batchit submit \
+#    --image 078941922927.dkr.ecr.us-west-2.amazonaws.com/cellranger \
+#    --role  AWSBatchServiceRole \
+#    --queue arn:aws:batch:us-west-2:078941922927:job-queue/first-run-job-queue \
+#    --jobname cellranger \
+#    --cpus 2 \
+#    --mem 4000 \
+#    interactive:5

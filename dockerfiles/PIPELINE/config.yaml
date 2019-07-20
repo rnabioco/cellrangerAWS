@@ -1,0 +1,22 @@
+# config file for running 10x pipeline 
+
+INPUT:
+    "/INPUT"
+
+RESULTS:
+    "/RESULTS"
+
+PIPELINE:
+    "/PIPELINE"
+
+TRANSCRIPTOME:
+    "/software/cellranger-3.0.2/cellranger-tiny-ref/3.0.0"
+
+SAMPLES:
+    - tinygex_S1
+
+EXPT_GROUPS:
+    - tinygex_S1
+
+MAX_10X_JOBS:
+    1

@@ -1,0 +1,35 @@
+shell.executable("/bin/bash")
+
+import os 
+import glob
+
+""" Snakefile for running 10x pipeline """
+# cellranger directory added to .bashrc 
+
+PIPELINE      = config["PIPELINE"]
+INPUT         = config["INPUT"]
+RESULTS       = config["RESULTS"]
+SAMPLES       = config["SAMPLES"]
+EXPT_GROUPS   = config["EXPT_GROUPS"]
+TRANSCRIPTOME = config["TRANSCRIPTOME"]
+MAX_10X_JOBS  = config["MAX_10X_JOBS"]
+
+
+# Find sample ids
+#fq_suffix = "_L[0-9]{3}_R[1|2]_001.fastq.gz"
+#SAMPLES = glob.glob(os.path.join(INPUT, "*[gz|fastq|fq]"))
+#SAMPLES = [re.sub(fq_suffix, "", os.path.basename(x)) for x in SAMPLES]
+#SAMPLES = list(set(SAMPLES))
+
+
+# Final output files
+rule all:
+    input:
+        expand(
+            "{pipeline}/logs/{sample}.out",
+            pipeline = PIPELINE, sample = SAMPLES
+        )
+
+
+include: "src/rules/10x_count.snake"
+
