@@ -146,7 +146,6 @@ check_state running_ec2
 
 
 
-
 # Retrieve public DNS for ssh
 # Public DNS is not listed in run-instances output
 pub_dns=$(
@@ -181,85 +180,84 @@ else
     )
 fi
 
-for i in $(seq 1 30)
-do
-    avail_vol=$(
-        aws ec2 describe-volumes \
-            --volume-ids "$vol_id" \
-            --filters Name=status,Values=available \
-            | grep -o "$vol_id"
-    )
+avail_vol() {
+    aws ec2 describe-volumes \
+        --volume-ids "$vol_id" \
+        --filters Name=status,Values=available \
+        | grep -o "$vol_id"
+}
 
-    if [[ ! -z $avail_vol ]]
-    then
-        break
-    fi
-
-    sleep 10
-done
+check_state avail_vol
 
 aws ec2 attach-volume \
     --instance-id "$ec2_id" \
     --volume-id "$vol_id" \
     --device /dev/sdh
 
-for i in $(seq 1 30)
-do
-    attach_vol=$(
-        aws ec2 describe-volumes \
-            --volume-ids "$vol_id" \
-            --filters Name=attachment.status,Values=attached \
-            | grep -o "$vol_id"
-    )
+attach_vol() {
+    aws ec2 describe-volumes \
+        --volume-ids "$vol_id" \
+        --filters Name=attachment.status,Values=attached \
+        | grep -o "$vol_id"
+}
 
-    if [[ ! -z $attach_vol ]]
-    then
-        break
-    fi
-
-    sleep 10
-done
+check_state attach_vol
 
 sleep 60
 
 
 
 # Retrieve device path for EBS volume
-dev_path=$(ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ssh" sudo fdisk -l | grep -E -o "^Disk .+$VOLUME_SIZE GiB" | grep -E -o "/dev/[[:alnum:]]+" 2>&1)
+dev_path=$(
+    ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ssh" \
+        sudo fdisk -l \
+            | grep -E -o "^Disk .+$VOLUME_SIZE GiB" \
+            | grep -E -o "/dev/[[:alnum:]]+" \
+            2>&1
+)
 
 
 
 # Format new EBS volume
 if [[ "$CREATE_VOL" == true ]]
 then
-    ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ssh" \
+    ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ssh" bash <<EOF
         sudo parted "$dev_path" mklabel gpt
-
-    ssh -i "$KEY" "$ssh" \
 	sudo parted -a opt "$dev_path" mkpart primary ext4 0% 100%
-
-    ssh -i "$KEY" "$ssh" \
 	sudo mkfs.ext4 -F "$dev_path"
+EOF
+
+    #ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ssh" \
+    #    sudo parted "$dev_path" mklabel gpt
+    #ssh -i "$KEY" "$ssh" \
+    #    sudo parted -a opt "$dev_path" mkpart primary ext4 0% 100%
+    #ssh -i "$KEY" "$ssh" \
+    #    sudo mkfs.ext4 -F "$dev_path"
 fi
 
 
 
 # Mount EBS volume and transfer data
-ssh -i "$KEY" "$ssh" \
+ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ssh" bash <<EOF
     sudo mkdir -p /mnt/EBS
-
-ssh -i "$KEY" "$ssh" \
     sudo mount "$dev_path" /mnt/EBS
-
-ssh -i "$KEY" "$ssh" \
     sudo mkdir -p /mnt/EBS/DATA
-
-ssh -i "$KEY" "$ssh" \
     sudo chmod -R 777 /mnt
+EOF
+
+#ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ssh" \
+#    sudo mkdir -p /mnt/EBS
+#ssh -i "$KEY" "$ssh" \
+#    sudo mount "$dev_path" /mnt/EBS
+#ssh -i "$KEY" "$ssh" \
+#    sudo mkdir -p /mnt/EBS/DATA
+#ssh -i "$KEY" "$ssh" \
+#    sudo chmod -R 777 /mnt
 
 if [[ "$CREATE_VOL" == true ]]
 then
     scp -i "$KEY" "$INPUT"/*.fastq.gz "$ssh":/mnt/EBS/DATA
+    scp -i "$KEY" "$INPUT"/config.yaml "$ssh":/mnt/EBS/DATA
 fi
 
 
