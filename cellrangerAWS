@@ -1,21 +1,19 @@
 #! /bin/bash
 
-set -o pipefail -o errexit
+set -x -o pipefail -o errexit
 
 
 
-# Set global variables
-CLUSTER_NAME=cluster-$(openssl rand -hex 3)
-
-PROJECT_NAME=cellranger
-
-TYPE=t2.2xlarge
+# Inputs
+PROJECT_NAME="cellranger"
+EC2_TYPE="t3a.2xlarge"
+AMI="ami-05ab00cc902c2f05d"
 VOLUME_SIZE=300
 CREATE_VOL=true
-VPC=vpc-08e5da3a70036dbdb
-SUBNETS=subnet-083bed60175393149,subnet-0f6fea1e5eebab925
-IMAGE=078941922927.dkr.ecr.us-west-2.amazonaws.com/cellranger:latest
-TASK_DEF=cellranger:4
+ZONE="us-west-2a"
+SECURITY_GROUP="sg-00cf9318d9719735d"
+SUBNET="subnet-083a3a855e543ee1c"
+USER="ubuntu"
 
 
 
@@ -24,16 +22,17 @@ usage() {
     echo """
 
 USAGE
-$0 [OPTIONS]
+"$0" [OPTIONS]
 
 OPTIONS
 -h, display this message
--i, input directory containing fastq files and config.yaml or EBS snapshot ID
+-i, input directory containing fastq files and config.yaml or ID for snapshot containing data
 -o, output directory
 -p, project name
 -k, path to AWS private key
 -t, EC2 instance type (default is ...)
 -s, size of EBS volume (default is 300G)
+-a, ID for machine image configured to run cellranger (default is ami-05ab00cc902c2f05d)
 
     """
 }
@@ -41,38 +40,42 @@ OPTIONS
 
 
 # Parse arguments
-while getopts ":hi:o:p:k:t:s:" args
+while getopts ":hi:o:p:k:t:s:a:" args
 do
-    case $args in
+    case "$args" in
         h)
             usage
             exit 0
             ;;
         i) 
-            INPUT=$OPTARG
+            INPUT="$OPTARG"
 
-	    if [[ $INPUT =~ ^vol\-[[:alnum:]]+$ ]]
+	    if [[ "$INPUT" =~ ^vol\-[[:alnum:]]+$ ]]
             then
                 CREATE_VOL=false
             fi
             ;;
         o)
-            OUTPUT=$OPTARG
+            OUTPUT="$OPTARG"
             ;;
         p)
-            PROJECT_NAME=$OPTARG
+            PROJECT_NAME="$OPTARG"
             ;;
         k)
-            KEY=$OPTARG
+            KEY="$OPTARG"
             ;;
         t)
-            TYPE=$OPTARG
+            EC2_TYPE="$OPTARG"
             ;;
         s)
-            VOLUME_SIZE=$OPTARG
+            VOLUME_SIZE="$OPTARG"
+            ;;
+        a)
+            AMI="$OPTARG"
             ;;
         :)
             echo -e "\nERROR: -$OPTARG requires an argument"
+
             usage
 	    exit 1
             ;;
@@ -83,236 +86,152 @@ do
     esac
 done
 
-if [[ -z $INPUT ]]
+if [[ -z "$INPUT" || -z "$OUTPUT" || -z "$KEY" ]]
 then
+    echo -e "\nERROR: arguments are required for -i, -o, and -k"
+
     usage
-    exit 0
+    exit 1
 fi
 
 
 
-# Launch ECS container instance
-key_name=$(basename -s .pem $KEY)
+# Launch EC2 instance
+# When using default VPC the instance does not have internet access. To resolve
+# this create new VPC, security group, subnet, and internet gateway. Activate
+# public IP for subnet, activate public DNS for VPC, attach VPC to internet
+# gateway, modify route table for VPC.
+key_name=$(basename -s .pem "$KEY")
 
-ecs-cli up \
-    --cluster $CLUSTER_NAME \
-    --region us-west-2 \
-    --launch-type EC2 \
-    --instance-type $TYPE \
-    --keypair $key_name \
-    --instance-role ecsInstanceRole \
-    --vpc $VPC \
-    --subnets $SUBNETS \
-    --port 22
-
-for i in $(seq 1 240)
-do
-    ecs_insts=$(aws ecs list-container-instances --cluster $CLUSTER_NAME)
-
-    if echo $ecs_insts | grep -q "container-instance"
-    then
-        break
-    else
-        sleep 10
-    fi
-done    
-
-
-
-# Start task to run docker container in ECS instance 
-aws ecs run-task \
-    --cluster $CLUSTER_NAME \
-    --task-definition $TASK_DEF
-
-
-
-# Retrieve public DNS for ssh 
-pub_dns=$(
-    aws ec2 describe-instances \
-        --filters Name=tag:Name,Values="ECS Instance - amazon-ecs-cli-setup-$CLUSTER_NAME" \
-        | grep -o -E "ec2-.+compute.amazonaws.com" \
-        | head -n 1
-)
-
-ssh=ec2-user@$pub_dns
-
-
-
-# Retrieve metadata for EC2 instance
 ec2_id=$(
-    ssh -o "StrictHostKeyChecking no" -i $KEY $ssh \
-        ec2-metadata -i \
+    aws ec2 run-instances \
+        --image-id "$AMI" \
+        --instance-type "$EC2_TYPE" \
+	--placement AvailabilityZone="$ZONE" \
+	--key-name "$key_name" \
+        --associate-public-ip-address \
+        --security-group-ids "$SECURITY_GROUP" \
+        --subnet-id "$SUBNET" \
+        | grep -E -o "InstanceId\": \"i\-[[:alnum:]]+" \
         | grep -E -o "i\-[[:alnum:]]+"
 )
 
-avail_zone=$(
-    ssh -i $KEY $ssh \
-        ec2-metadata -z \
-	| grep -E -o "us\-[[:alnum:]\-]+"
+sleep 60
+
+
+
+# Retrieve public DNS for ssh
+# Public DNS is not listed in run-instances output
+pub_dns=$(
+    aws ec2 describe-instances \
+        --instance-id "$ec2_id" \
+        | grep -E -o "ec2\-[[:alnum:]\.\-]+compute.amazonaws.com" \
+        | head -n 1
 )
+
+ssh="$USER@$pub_dns"
 
 
 
 # Create and attach EBS volume
-if [[ $CREATE_VOL == true ]]
+if [[ "$CREATE_VOL" == true ]]
 then
     vol_id=$(
         aws ec2 create-volume \
-            --availability-zone $avail_zone \
-	    --size $VOLUME_SIZE \
-	    | grep -E -o "^vol\-[[:alnum:]]+$"
+            --availability-zone "$ZONE" \
+	    --size "$VOLUME_SIZE" \
+	    | grep -E -o "vol\-[[:alnum:]]+"
     )
 
     sleep 60
+
 else
-    snap_id=$INPUT
+    snap_id="$INPUT"
 
     vol_id=$(
         aws ec2 create-volume \
-            --availability-zone $avail_zone \
-            --snapshot-id $snap_id \
-	    | grep -E -o "^vol\-[[:alnum:]]+$"
+            --availability-zone "$ZONE" \
+            --snapshot-id "$snap_id" \
+	    | grep -E -o "vol\-[[:alnum:]]+"
     )
 fi
 
 aws ec2 attach-volume \
-    --instance-id $ec2_id \
-    --volume-id $vol_id \
-    --device /dev/sdh
+    --instance-id "$ec2_id" \
+    --volume-id "$vol_id" \
+    --device /dev/nvme0n1
+
+aws ec2 reboot-instances \
+    --instance-id "$ec2_id"
 
 
 
 # Format new EBS volume
-if [[ $CREATE_VOL == true ]]
+if [[ "$CREATE_VOL" == true ]]
 then
-    ssh -o "StrictHostKeyChecking no" -i $KEY $ssh \
-        sudo yum -y install parted
+    ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ssh" \
+        sudo parted /dev/nvme0n1 mklabel gpt
 
-    ssh -i $KEY $ssh \
-        sudo parted /dev/sdh mklabel gpt
+    ssh -i "$KEY" "$ssh" \
+	sudo parted -a opt /dev/nvme0n1 mkpart primary ext4 0% 100%
 
-    ssh -i $KEY $ssh \
-	sudo parted -a opt /dev/sdh mkpart primary ext4 0% 100%
-
-    ssh -i $KEY $ssh \
-	sudo mkfs.ext4 /dev/sdh
+    ssh -i "$KEY" "$ssh" \
+	sudo mkfs.ext4 /dev/nvme0n1
 fi
 
 
 
 # Mount EBS volume and transfer data
-ssh -i $KEY $ssh \
-    sudo mkdir -p /mnt/ebs_vol
+ssh -i "$KEY" "$ssh" \
+    sudo mkdir -p /mnt/EBS
 
-ssh -i $KEY $ssh \
-    sudo mount /dev/sdh /mnt/ebs_vol
+ssh -i "$KEY" "$ssh" \
+    sudo mount /dev/nvme0n1 /mnt/EBS
 
-ssh -i $KEY $ssh \
-    sudo mkdir -p /mnt/ebs_vol/INPUT
+ssh -i "$KEY" "$ssh" \
+    sudo mkdir -p /mnt/EBS/DATA
 
-ssh -i $KEY $ssh \
+ssh -i "$KEY" "$ssh" \
     sudo chmod -R 777 /mnt
 
-if [[ $CREATE_VOL == true ]]
+if [[ "$CREATE_VOL" == true ]]
 then
-    scp -i $KEY $INPUT/*.fastq.gz $ssh:/mnt/ebs_vol/INPUT
+    scp -i "$KEY" "$INPUT/"*".fastq.gz" "$ssh:/mnt/EBS/DATA"
 fi
 
 
 
-# Create and run new docker container with mounted EBS volume
-task_name=$(echo $TASK_DEF | cut -d ":" -f 1)
-
-container=$(
-    ssh -i $KEY $ssh \
-        docker ps -a | grep -E -o "ecs-$task_name[[:alnum:]\-]+"
-)
-
-ssh -i $KEY $ssh \
-    docker stop $container
-
-ssh -i $KEY $ssh \
-    docker rm  $container
-
-ssh -i $KEY $ssh \
-    docker run -d --name $container -v /mnt/ebs_vol/INPUT:/INPUT $IMAGE
-
-
-
 # Run cellranger
-#ssh -i $KEY $ssh \
-#    docker exec $container bash /PIPELINE/RUN.sh \
-#    > $OUTPUT/cellranger.out \
-#    2> $OUTPUT/cellranger.err
-ssh -i $KEY $ssh \
-    docker exec $container cp /PIPELINE/RUN.sh /RESULTS
+ssh -i "$KEY" "$ssh" \
+    bash ~/PIPELINE/RUN.sh
 
 
 
 # Transfer results to local machine
-ssh -i $KEY $ssh \
-    docker container cp $container:/RESULTS /home/ec2-user
-
-scp -i $KEY $ssh:/home/ec2-user/RESULTS/* $OUTPUT
+scp -i "$KEY" $ssh:~/RESULTS/* "$OUTPUT"
 
 
 
-# Shutdown EC2 cluster
-ecs-cli down --force --cluster $CLUSTER_NAME
+exit 0
+
+# Terminate EC2 instance
+aws ec2 terminate-instances \
+    --instance-ids "$ec2_id"
 
 if [[ CREATE_VOL == true ]]
 then
     snap_id=$(
         aws ec2 create-snapshot \
             --description $PROJECT_NAME \
-            --volume-id $vol_id \
-	    | grep -E -o "^snap\-[[:alnum:]]+$"
+            --volume-id "$vol_id" \
+	    | grep -E -o "snap\-[[:alnum:]]+"
     )
 fi
 
-echo -e "\nData can be accessed with snapshot ID: $snap_id\n"
+echo -e "\nData can be accessed with snapshot ID: "$snap_id"\n"
 
 aws ec2 delete-volume \
-    --volume-id $vol_id
+    --volume-id "$vol_id"
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-#for i in $(seq 1 240)
-#do
-#    name_regex="ecs-$task_name[[:alnum:]\-]+"
-#    containers=$(
-#        ssh -i $KEY $ssh \
-#            docker ps -a
-#    )
-#    if echo $containers | grep -E -q "$name_regex"
-#    then
-#        container=$(echo $containers | grep -E -o "$name_regex")
-#        break
-#    else
-#        sleep 10
-#    fi
-#done
-#
-#ssh -i $KEY $ssh \
-#    docker cp /mnt/ebs_vol/INPUT $container:/
-#
-#batchit submit \
-#    --image 078941922927.dkr.ecr.us-west-2.amazonaws.com/cellranger \
-#    --role  AWSBatchServiceRole \
-#    --queue arn:aws:batch:us-west-2:078941922927:job-queue/first-run-job-queue \
-#    --jobname cellranger \
-#    --cpus 2 \
-#    --mem 4000 \
-#    interactive:5

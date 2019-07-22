@@ -1,0 +1,109 @@
+#! /bin/bash
+
+set -x -o nounset -o pipefail -o errexit
+
+
+
+# Inputs
+EC2_TYPE="t2.micro"
+AMI="ami-07b4f3c02c7f83d59"  # Ubuntu 18.04 server image
+VOLUME_SIZE=100
+ZONE="us-west-2a"
+KEY="$HOME/.ssh/sheridar-key-pair-uswest2.pem"
+SECURITY_GROUP="sg-00cf9318d9719735d"
+SUBNET="subnet-083a3a855e543ee1c"
+IMAGE_NAME="ubuntu_cellranger"
+USER="ubuntu"
+DESCRIPTION="This image is configured to run cellranger"
+
+
+
+# Launch EC2 instance with custom EBS size
+# When using default VPC the instance does not have internet access. To resolve
+# this create new VPC, security group, subnet, and internet gateway. Activate
+# public IP for subnet, activate public DNS for VPC, attach VPC to internet
+# gateway, modify route table for VPC.
+key_name=$(basename -s .pem "$KEY")
+root_dev=$(
+    aws ec2 describe-images \
+        --image-id "$AMI" \
+        | grep -B 1 "Ebs" \
+        | grep -E -o "/dev/[[:alnum:]]+"
+)
+
+ec2_id=$(
+    aws ec2 run-instances \
+        --image-id "$AMI" \
+        --instance-type "$EC2_TYPE" \
+	--placement AvailabilityZone="$ZONE" \
+        --block-device-mapping DeviceName="$root_dev",Ebs={VolumeSize="$VOLUME_SIZE"} \
+        --key-name "$key_name" \
+        --associate-public-ip-address \
+        --security-group-ids "$SECURITY_GROUP" \
+        --subnet-id "$SUBNET" \
+        | grep -E -o "InstanceId\": \"i\-[[:alnum:]]+" \
+        | grep -E -o "i\-[[:alnum:]]+"
+)
+
+sleep 60
+
+
+
+# Retrieve public DNS for ssh
+# Public DNS is not listed in run-instances output
+pub_dns=$(
+    aws ec2 describe-instances \
+        --instance-id "$ec2_id" \
+        | grep -E -o "ec2\-[[:alnum:]\.\-]+compute.amazonaws.com" \
+        | head -n 1
+)
+
+ssh="$USER@$pub_dns"
+
+
+
+# Install packages on EC2 instance
+pipeline="~/PIPELINE"
+
+ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ssh" \
+    sudo apt-get update
+
+ssh -i "$KEY" "$ssh" \
+    sudo apt-get -y install python3-pip
+
+ssh -i "$KEY" "$ssh" \
+    pip3 install snakemake
+
+
+
+# Transfer snakemake pipeline to EC2 instance
+scp -r -i "$KEY" PIPELINE "$ssh:~/"
+
+ssh -i "$KEY" "$ssh" \
+    tar -zxf "$pipeline/cellranger-3.0.2.tar.gz"
+
+ssh -i "$KEY" "$ssh" \
+    rm "$pipeline/cellranger-3.0.2.tar.gz"
+
+ssh -i "$KEY" "$ssh" \
+    mv "$pipeline/DATA" "~/"
+
+ssh -i "$KEY" "$ssh" \
+    mv "$pipeline/RESULTS" "~/"
+
+
+
+# Save EC2 instance image
+aws ec2 create-image \
+    --instance-id "$ec2_id" \
+    --name "$IMAGE_NAME" \
+    --description "$DESCRIPTION"
+
+
+
+# Terminate EC2 instance
+aws ec2 terminate-instances \
+    --instance-ids "$ec2_id"
+
+
+

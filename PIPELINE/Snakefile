@@ -1,0 +1,25 @@
+shell.executable("/bin/bash")
+
+import os 
+import glob
+
+SAMPLES      = config["SAMPLES"]
+EXPT_GROUPS  = config["EXPT_GROUPS"]
+GENOME       = config["GENOME"]
+MAX_10X_JOBS = config["MAX_10X_JOBS"]
+
+HOME    = os.path.expanduser("~")
+DATA    = os.path.join("/mnt/EBS/DATA")
+RESULTS = os.path.join(HOME, "RESULTS")
+GENOME  = os.path.join(HOME, "PIPELINE/ref", GENOME)
+
+# Final output files
+rule all:
+    input:
+        expand(
+            "{results}/logs/{sample}.out",
+            results = RESULTS, sample = SAMPLES
+        )
+
+include: "cellranger.snake"
+

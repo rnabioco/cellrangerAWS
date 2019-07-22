@@ -12,8 +12,7 @@ def _collect_groups(wildcards):
     data   = wildcards.data
 
     groups = groups.split(",")
-    outdir = "/RESULTS"
-    #outdir = os.path.join(data, "results")
+    outdir = "".join({RESULTS})
 
     out = open(groups[0] + "_groups_def.csv", 'w')
     out.write("library_id,molecule_h5\n")
@@ -47,8 +46,7 @@ def _get_sample_ids(wildcards):
     no_lane = "_S[0-9]+_[RI][12]_001\.fastq\.gz$"
     lane    = "_S[0-9]+_L[0-9]{3}_[RI][12]_001\.fastq\.gz$"
 
-    #fq_dir = os.path.join(wildcards.data, "raw_data")
-    fq_dir = "/INPUT"
+    fq_dir = "".join({DATA})
     fqs    = glob.glob(os.path.join(fq_dir, wildcards.sample + "*"))
     R1_fqs = [x for x in fqs if "R1" in x]
     R1_fqs = [os.path.basename(x) for x in R1_fqs]
@@ -77,8 +75,7 @@ def _get_sample_fq_paths(wildcards):
     sample_ids = _get_sample_ids(wildcards)
     sample_ids = sample_ids.split(",")
 
-    #fq_dir    = os.path.join(wildcards.data, "raw_data")
-    fq_dir    = "/INPUT"
+    fq_dir    = "".join({DATA})
     input_fqs = set()
 
     for sample in sample_ids:
@@ -108,13 +105,13 @@ rule cellranger_count:
     input:
         _get_sample_fq_paths
     output:
-        "{pipeline}/logs/{sample}.out"
+        "{results}/logs/{sample}.out"
     params:
         fqs    = _get_sample_ids,
-        outdir = "/RESULTS",
-        indir  = "/INPUT"
+        outdir = {RESULTS},
+        indir  = {DATA}
     log:
-	"{pipeline}/logs/{sample}"
+	"{results}/logs/{sample}"
     threads:
         1
     shell:
@@ -123,7 +120,7 @@ rule cellranger_count:
 
         echo {params.fqs}
 
-        /software/cellranger-3.0.2/cellranger count \
+        {PWD}/cellranger-3.0.2/cellranger count \
             --id={wildcards.sample} \
             --fastqs={params.indir} \
             --sample={params.fqs} \
