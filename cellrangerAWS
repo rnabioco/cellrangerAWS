@@ -1,13 +1,13 @@
 #! /bin/bash
 
-set -x -o pipefail -o errexit
+set -x -o pipefail
 
 
 
 # Inputs
 PROJECT_NAME="cellranger"
-EC2_TYPE="t3a.2xlarge"
-AMI="ami-05ab00cc902c2f05d"
+EC2_TYPE="t2.2xlarge"
+AMI="ami-0c426827ef99292f7"
 VOLUME_SIZE=300
 CREATE_VOL=true
 ZONE="us-west-2a"
@@ -22,7 +22,7 @@ usage() {
     echo """
 
 USAGE
-"$0" [OPTIONS]
+$0 [OPTIONS]
 
 OPTIONS
 -h, display this message
@@ -30,9 +30,9 @@ OPTIONS
 -o, output directory
 -p, project name
 -k, path to AWS private key
--t, EC2 instance type (default is ...)
--s, size of EBS volume (default is 300G)
--a, ID for machine image configured to run cellranger (default is ami-05ab00cc902c2f05d)
+-t, EC2 instance type (default is $EC2_TYPE)
+-s, size of EBS volume (default is $VOLUME_SIZE GB)
+-a, ID for machine image configured to run cellranger (default is $AMI)
 
     """
 }
@@ -96,6 +96,25 @@ fi
 
 
 
+# Function to check instance/volume state
+check_state() {
+    local input_fun=$1
+
+    for i in $(seq 1 60)
+    do
+        state=$("$input_fun")
+
+        if [[ ! -z $state ]]
+        then
+            break
+        fi
+
+        sleep 5
+    done
+}
+
+
+
 # Launch EC2 instance
 # When using default VPC the instance does not have internet access. To resolve
 # this create new VPC, security group, subnet, and internet gateway. Activate
@@ -116,7 +135,15 @@ ec2_id=$(
         | grep -E -o "i\-[[:alnum:]]+"
 )
 
-sleep 60
+running_ec2() {
+    aws ec2 describe-instances \
+        --instance-id "$ec2_id" \
+        --filters Name=instance-state-name,Values=running \
+        | grep -o "$ec2_id"
+}
+
+check_state running_ec2
+
 
 
 
@@ -143,8 +170,6 @@ then
 	    | grep -E -o "vol\-[[:alnum:]]+"
     )
 
-    sleep 60
-
 else
     snap_id="$INPUT"
 
@@ -156,13 +181,51 @@ else
     )
 fi
 
+for i in $(seq 1 30)
+do
+    avail_vol=$(
+        aws ec2 describe-volumes \
+            --volume-ids "$vol_id" \
+            --filters Name=status,Values=available \
+            | grep -o "$vol_id"
+    )
+
+    if [[ ! -z $avail_vol ]]
+    then
+        break
+    fi
+
+    sleep 10
+done
+
 aws ec2 attach-volume \
     --instance-id "$ec2_id" \
     --volume-id "$vol_id" \
-    --device /dev/nvme0n1
+    --device /dev/sdh
 
-aws ec2 reboot-instances \
-    --instance-id "$ec2_id"
+for i in $(seq 1 30)
+do
+    attach_vol=$(
+        aws ec2 describe-volumes \
+            --volume-ids "$vol_id" \
+            --filters Name=attachment.status,Values=attached \
+            | grep -o "$vol_id"
+    )
+
+    if [[ ! -z $attach_vol ]]
+    then
+        break
+    fi
+
+    sleep 10
+done
+
+sleep 60
+
+
+
+# Retrieve device path for EBS volume
+dev_path=$(ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ssh" sudo fdisk -l | grep -E -o "^Disk .+$VOLUME_SIZE GiB" | grep -E -o "/dev/[[:alnum:]]+" 2>&1)
 
 
 
@@ -170,13 +233,13 @@ aws ec2 reboot-instances \
 if [[ "$CREATE_VOL" == true ]]
 then
     ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ssh" \
-        sudo parted /dev/nvme0n1 mklabel gpt
+        sudo parted "$dev_path" mklabel gpt
 
     ssh -i "$KEY" "$ssh" \
-	sudo parted -a opt /dev/nvme0n1 mkpart primary ext4 0% 100%
+	sudo parted -a opt "$dev_path" mkpart primary ext4 0% 100%
 
     ssh -i "$KEY" "$ssh" \
-	sudo mkfs.ext4 /dev/nvme0n1
+	sudo mkfs.ext4 -F "$dev_path"
 fi
 
 
@@ -186,7 +249,7 @@ ssh -i "$KEY" "$ssh" \
     sudo mkdir -p /mnt/EBS
 
 ssh -i "$KEY" "$ssh" \
-    sudo mount /dev/nvme0n1 /mnt/EBS
+    sudo mount "$dev_path" /mnt/EBS
 
 ssh -i "$KEY" "$ssh" \
     sudo mkdir -p /mnt/EBS/DATA
@@ -196,39 +259,42 @@ ssh -i "$KEY" "$ssh" \
 
 if [[ "$CREATE_VOL" == true ]]
 then
-    scp -i "$KEY" "$INPUT/"*".fastq.gz" "$ssh:/mnt/EBS/DATA"
+    scp -i "$KEY" "$INPUT"/*.fastq.gz "$ssh":/mnt/EBS/DATA
 fi
 
 
 
 # Run cellranger
 ssh -i "$KEY" "$ssh" \
-    bash ~/PIPELINE/RUN.sh
+    bash /home/"$USER"/PIPELINE/RUN.sh
 
 
 
 # Transfer results to local machine
-scp -i "$KEY" $ssh:~/RESULTS/* "$OUTPUT"
+scp -i "$KEY" "$ssh":/home/"$USER"/PIPELINE/RESULTS/* "$OUTPUT"
 
 
 
+# REMEMBER TO REMOVE THIS!!!
 exit 0
+
+
 
 # Terminate EC2 instance
 aws ec2 terminate-instances \
     --instance-ids "$ec2_id"
 
-if [[ CREATE_VOL == true ]]
+if [[ "$CREATE_VOL" == true ]]
 then
     snap_id=$(
         aws ec2 create-snapshot \
-            --description $PROJECT_NAME \
+            --description "$PROJECT_NAME" \
             --volume-id "$vol_id" \
 	    | grep -E -o "snap\-[[:alnum:]]+"
     )
 fi
 
-echo -e "\nData can be accessed with snapshot ID: "$snap_id"\n"
+echo -e "\nData can be accessed with snapshot ID: $snap_id\n"
 
 aws ec2 delete-volume \
     --volume-id "$vol_id"

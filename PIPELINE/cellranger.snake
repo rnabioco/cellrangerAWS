@@ -120,13 +120,13 @@ rule cellranger_count:
 
         echo {params.fqs}
 
-        {PWD}/cellranger-3.0.2/cellranger count \
+        {HOME}/cellranger-3.0.2/cellranger count \
             --id={wildcards.sample} \
             --fastqs={params.indir} \
             --sample={params.fqs} \
             --jobmode=local \
             --project="scRNA-seq" \
-            --transcriptome={TRANSCRIPTOME}
+            --transcriptome={GENOME}
 
         mkdir -p {params.outdir}
         mv -u {wildcards.sample} {params.outdir}

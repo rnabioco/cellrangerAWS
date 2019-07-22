@@ -68,6 +68,8 @@ pipeline="~/PIPELINE"
 ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ssh" \
     sudo apt-get update
 
+sleep 30
+
 ssh -i "$KEY" "$ssh" \
     sudo apt-get -y install python3-pip
 
@@ -77,33 +79,48 @@ ssh -i "$KEY" "$ssh" \
 
 
 # Transfer snakemake pipeline to EC2 instance
-scp -r -i "$KEY" PIPELINE "$ssh:~/"
+scp -r -i "$KEY" PIPELINE "$ssh":/home/"$USER"
 
 ssh -i "$KEY" "$ssh" \
-    tar -zxf "$pipeline/cellranger-3.0.2.tar.gz"
+    tar -zxf "$pipeline"/cellranger-3.0.2.tar.gz
 
 ssh -i "$KEY" "$ssh" \
-    rm "$pipeline/cellranger-3.0.2.tar.gz"
-
-ssh -i "$KEY" "$ssh" \
-    mv "$pipeline/DATA" "~/"
-
-ssh -i "$KEY" "$ssh" \
-    mv "$pipeline/RESULTS" "~/"
+    rm "$pipeline"/cellranger-3.0.2.tar.gz
 
 
 
 # Save EC2 instance image
-aws ec2 create-image \
-    --instance-id "$ec2_id" \
-    --name "$IMAGE_NAME" \
-    --description "$DESCRIPTION"
+image_id=$(
+    aws ec2 create-image \
+        --instance-id "$ec2_id" \
+        --name "$IMAGE_NAME" \
+        --description "$DESCRIPTION" \
+        | grep -E -o "ami\-[[:alnum:]]+"
+)
+
+for i in $(seq 1 60)
+do
+    avail_image=$(
+        aws ec2 describe-images \
+            --image-id "$image_id" \
+            --filters Name=state,Values=available \
+            | grep -E -o "ami\-[[:alnum:]]+"
+    )
+
+    if [[ ! -z "$avail_image" ]]
+    then
+        break
+
+    else
+        sleep 10
+    fi
+done
 
 
 
 # Terminate EC2 instance
-aws ec2 terminate-instances \
-    --instance-ids "$ec2_id"
+#aws ec2 terminate-instances \
+#    --instance-ids "$ec2_id"
 
 
 

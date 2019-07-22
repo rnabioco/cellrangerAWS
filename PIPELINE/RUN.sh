@@ -5,5 +5,5 @@ snakemake \
     --latency-wait 60 \
     --rerun-incomplete  \
     --configfile /mnt/EBS/DATA/config.yaml \
-    > ~/RESULTS/logs/cellranger.err 2>&1
+    > ~/PIPELINE/RESULTS/logs/cellranger.err 2>&1
 

@@ -10,7 +10,7 @@ MAX_10X_JOBS = config["MAX_10X_JOBS"]
 
 HOME    = os.path.expanduser("~")
 DATA    = os.path.join("/mnt/EBS/DATA")
-RESULTS = os.path.join(HOME, "RESULTS")
+RESULTS = os.path.join(HOME, "PIPELINE/RESULTS")
 GENOME  = os.path.join(HOME, "PIPELINE/ref", GENOME)
 
 # Final output files
