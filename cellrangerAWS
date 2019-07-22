@@ -7,13 +7,15 @@ set -x -o pipefail
 # Inputs
 PROJECT_NAME="cellranger"
 EC2_TYPE="t2.2xlarge"
-AMI="ami-0c426827ef99292f7"
+AMI="ami-0b223f110bbbd4a9e"
 VOLUME_SIZE=300
 CREATE_VOL=true
 ZONE="us-west-2a"
 SECURITY_GROUP="sg-00cf9318d9719735d"
 SUBNET="subnet-083a3a855e543ee1c"
 USER="ubuntu"
+
+TIME=$(date +%Y%m%d-%H:%M:%S)
 
 
 
@@ -50,7 +52,7 @@ do
         i) 
             INPUT="$OPTARG"
 
-	    if [[ "$INPUT" =~ ^vol\-[[:alnum:]]+$ ]]
+	    if [[ "$INPUT" =~ ^snap\-[[:alnum:]]+$ ]]
             then
                 CREATE_VOL=false
             fi
@@ -109,6 +111,13 @@ check_state() {
             break
         fi
 
+	if [[ i == 60 ]]
+        then
+            echo -e "\nERROR: could not find $input_fun\n"
+
+            exit 1
+        fi
+
         sleep 5
     done
 }
@@ -159,7 +168,7 @@ ssh="$USER@$pub_dns"
 
 
 
-# Create and attach EBS volume
+# Create EBS volume
 if [[ "$CREATE_VOL" == true ]]
 then
     vol_id=$(
@@ -180,28 +189,31 @@ else
     )
 fi
 
-avail_vol() {
+available_vol() {
     aws ec2 describe-volumes \
         --volume-ids "$vol_id" \
         --filters Name=status,Values=available \
         | grep -o "$vol_id"
 }
 
-check_state avail_vol
+check_state available_vol
 
+
+
+# Attach EBS volume
 aws ec2 attach-volume \
     --instance-id "$ec2_id" \
     --volume-id "$vol_id" \
     --device /dev/sdh
 
-attach_vol() {
+attached_vol() {
     aws ec2 describe-volumes \
         --volume-ids "$vol_id" \
         --filters Name=attachment.status,Values=attached \
         | grep -o "$vol_id"
 }
 
-check_state attach_vol
+check_state attached_vol
 
 sleep 60
 
@@ -227,12 +239,6 @@ then
 	sudo mkfs.ext4 -F "$dev_path"
 EOF
 
-    #ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ssh" \
-    #    sudo parted "$dev_path" mklabel gpt
-    #ssh -i "$KEY" "$ssh" \
-    #    sudo parted -a opt "$dev_path" mkpart primary ext4 0% 100%
-    #ssh -i "$KEY" "$ssh" \
-    #    sudo mkfs.ext4 -F "$dev_path"
 fi
 
 
@@ -245,19 +251,19 @@ ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ssh" bash <<EOF
     sudo chmod -R 777 /mnt
 EOF
 
-#ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ssh" \
-#    sudo mkdir -p /mnt/EBS
-#ssh -i "$KEY" "$ssh" \
-#    sudo mount "$dev_path" /mnt/EBS
-#ssh -i "$KEY" "$ssh" \
-#    sudo mkdir -p /mnt/EBS/DATA
-#ssh -i "$KEY" "$ssh" \
-#    sudo chmod -R 777 /mnt
-
 if [[ "$CREATE_VOL" == true ]]
 then
     scp -i "$KEY" "$INPUT"/*.fastq.gz "$ssh":/mnt/EBS/DATA
     scp -i "$KEY" "$INPUT"/config.yaml "$ssh":/mnt/EBS/DATA
+
+    snap_name="$PROJECT_NAME"_"$TIME"
+
+    snap_id=$(
+        aws ec2 create-snapshot \
+            --description "$snap_name" \
+            --volume-id "$vol_id" \
+	    | grep -E -o "snap\-[[:alnum:]]+"
+    	)
 fi
 
 
@@ -266,36 +272,47 @@ fi
 ssh -i "$KEY" "$ssh" \
     bash /home/"$USER"/PIPELINE/RUN.sh
 
-
-
-# Transfer results to local machine
-scp -i "$KEY" "$ssh":/home/"$USER"/PIPELINE/RESULTS/* "$OUTPUT"
-
-
-
-# REMEMBER TO REMOVE THIS!!!
-exit 0
+scp -r -i "$KEY" "$ssh":/home/"$USER"/PIPELINE/RESULTS/logs "$OUTPUT"
+#scp -r -i "$KEY" "$ssh":/home/"$USER"/PIPELINE/RESULTS/* "$OUTPUT"     # NEED TO CHANGE THIS!!!!!
 
 
 
 # Terminate EC2 instance
+completed_snap() {
+    aws ec2 describe-snapshots \
+        --snapshot-ids "$snap_id" \
+        --filters Name=status,Values=completed \
+        | grep -E -o "$snap_id"
+}
+
+check_state completed_snap
+
 aws ec2 terminate-instances \
     --instance-ids "$ec2_id"
 
-if [[ "$CREATE_VOL" == true ]]
-then
-    snap_id=$(
-        aws ec2 create-snapshot \
-            --description "$PROJECT_NAME" \
-            --volume-id "$vol_id" \
-	    | grep -E -o "snap\-[[:alnum:]]+"
-    )
-fi
+terminated_ec2() {
+    aws ec2 describe-instances \
+        --instance-id "$ec2_id" \
+        --filters Name=instance-state-name,Values=terminated \
+        | grep -o "$ec2_id"
+}
 
-echo -e "\nData can be accessed with snapshot ID: $snap_id\n"
+check_state terminated_ec2
 
+
+
+# Delete EBS volume
 aws ec2 delete-volume \
     --volume-id "$vol_id"
+
+echo """
+
+Data have been saved to snapshot $snap_id.
+
+Samples can be re-run using the following command:
+$0 -i $snap_id -o $OUTPUT -k $KEY
+
+"""
 
 
 

@@ -12,7 +12,7 @@ ZONE="us-west-2a"
 KEY="$HOME/.ssh/sheridar-key-pair-uswest2.pem"
 SECURITY_GROUP="sg-00cf9318d9719735d"
 SUBNET="subnet-083a3a855e543ee1c"
-IMAGE_NAME="ubuntu_cellranger_2"
+IMAGE_NAME="ubuntu_cellranger_4"
 USER="ubuntu"
 DESCRIPTION="This image is configured to run cellranger"
 
@@ -73,7 +73,7 @@ running_ec2() {
 
 check_state running_ec2
 
-sleep 30
+sleep 120
 
 
 
@@ -91,8 +91,6 @@ ssh="$USER@$pub_dns"
 
 
 # Install packages on EC2 instance
-pipeline="~/PIPELINE"
-
 ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ssh" bash <<EOF
     sudo apt-get update
     sudo apt-get -y install python3-pip
@@ -102,11 +100,14 @@ EOF
 
 
 # Transfer snakemake pipeline to EC2 instance
+ec2_home="/home/$USER"
+ec2_pipeline="$ec2_home/PIPELINE"
+
 scp -r -i "$KEY" PIPELINE "$ssh":/home/"$USER"
 
 ssh -i "$KEY" "$ssh" bash <<EOF
-    tar -zxf "$pipeline"/cellranger-3.0.2.tar.gz
-    rm "$pipeline"/cellranger-3.0.2.tar.gz
+    tar -zxf /home/"$USER"/PIPELINE/cellranger-3.0.2.tar.gz
+    rm /home/"$USER"/PIPELINE/cellranger-3.0.2.tar.gz
 EOF
 
 

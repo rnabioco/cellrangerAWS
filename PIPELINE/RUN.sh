@@ -1,6 +1,6 @@
 #!/bin/bash
 
-snakemake \
+~/.local/bin/snakemake \
     --snakefile ~/PIPELINE/Snakefile \
     --latency-wait 60 \
     --rerun-incomplete  \
