@@ -4,134 +4,255 @@ import glob
 
 """ Snakerules for running 10x cellranger """
 
-def _collect_groups(wildcards):
-    """generate a csv file with path to molecule_info.h5 for each expt
-    group. Return group_id and path to csv as a list """
-     
-    groups = wildcards.expt_groups
-    data   = wildcards.data
 
-    groups = groups.split(",")
-    outdir = "".join({RESULTS})
+# Function to retrieve fastq files
+def _get_fqs(wildcards):
+    """
+    Retrieve path for gene expression and antibody fastqs. Return a list of
+    comma separated paths.
+    """
 
-    out = open(groups[0] + "_groups_def.csv", 'w')
+    # Function to retrieve paths for each fastq file
+    def _get_path(fastq_name):
+        fastq_dir  = "".join({DATA})
+        fastq_name = "".join(fastq_name)
+        
+        fq_str = ""
+
+        # Muliple directories can be given as a comma separated string
+        for fq_dir in fastq_dir.split(","):
+            fq_path = os.path.join(fq_dir, fastq_name + "*.fastq.gz") 
+            fqs     = glob.glob(os.path.abspath(fq_path))
+            R1_fqs  = [x for x in fqs if "R1" in x]
+    
+            for fq in R1_fqs:
+                fq_str += fq + ","
+
+        fq_str = fq_str.strip(",")
+
+        return fq_str
+
+
+    # Return EXP and ADT (if provided) fastq paths
+    exp_id  = wildcards.sample
+    adt_fqs = "none"
+
+    if len(ADT_SAMPLES) == 2:
+        exp_id, adt_id = wildcards.sample.split("-")
+        adt_fqs        = _get_path(adt_id)
+
+    exp_fqs = _get_path(exp_id)
+
+    return [exp_fqs, adt_fqs]
+
+
+
+# Function to create sample group
+def _create_group(wildcards):
+    """
+    Generate a csv file with path to molecule_info.h5 for each expt
+    group. Return group name and path to csv as a list.
+    """
+    
+    samples  = GROUP.split("-")
+    aggr_csv = os.path.join(RESULTS, GROUP + "_aggr.csv")
+    out      = open(aggr_csv, 'w')
+
     out.write("library_id,molecule_h5\n")
 
-    for group in groups: 
-        if group is "":
-            continue
+    for sample in samples:
+        #if group is "":
+        #    continue
+        #library = sample.strip(" ")
 
-        library = group.strip(" ")
-        path    = os.path.join(outdir, library, "outs", "molecule_info.h5")
+        h5_path = os.path.join(RESULTS, sample, "outs/molecule_info.h5")
+        h5_path = os.path.abspath(h5_path)
 
-        out.write("{},{}\n".format(library, path))
+        out.write("{},{}\n".format(sample, h5_path))
     
     out.close()
 
-    # return list with group id and path to csv
-    return [groups[0][:-1] + "_aggr", groups[0] + "_groups_def.csv"]
+    # Return list with group name and path to csv
+    return [GROUP + "_aggr", aggr_csv]
 
 
-def _get_sample_ids(wildcards):
-    """ extract out sample prefixes from fastqs to pass to cellranger
-    i.e. given the following fastqs
-    sample_name_1_S1_L001_R1_001.fastq.gz"
-    sample_name_2_S2_L001_R1_001.fastq.gz"
-    sample_name_3_S3_L001_R1_001.fastq.gz"
 
-    return:
-    sample_name_1,sample_name_2,sample_name_3
-    """
-
-    no_lane = "_S[0-9]+_[RI][12]_001\.fastq\.gz$"
-    lane    = "_S[0-9]+_L[0-9]{3}_[RI][12]_001\.fastq\.gz$"
-
-    fq_dir = "".join({DATA})
-    fqs    = glob.glob(os.path.join(fq_dir, wildcards.sample + "*"))
-    R1_fqs = [x for x in fqs if "R1" in x]
-    R1_fqs = [os.path.basename(x) for x in R1_fqs]
-
-    sample_ids = set()
-
-    for fq in R1_fqs:
-        if re.search(lane, fq) is not None:
-            sample_id = re.sub(lane, "", fq)
-            sample_ids.add(sample_id)
-
-        elif re.search(no_lane, fq) is not None:
-            # Novaseq style S1 flowcell
-            sample_id = re.sub(no_lane, "", fq)
-            sample_ids.add(sample_id)
-
-        else:
-            sys.exit("unable to parse out sample id from {}".format(fq))
-
-    return ",".join(sample_ids)
-
-def _get_sample_fq_paths(wildcards):
-    """ generate list of fastqs that contain sample prefix 
-    """
-    
-    sample_ids = _get_sample_ids(wildcards)
-    sample_ids = sample_ids.split(",")
-
-    fq_dir    = "".join({DATA})
-    input_fqs = set()
-
-    for sample in sample_ids:
-      
-        r1_pattern = sample + "*" + "R1_001.fastq.gz"
-      
-        r1s   = glob.glob(os.path.join(fq_dir, r1_pattern))
-        r2s   = [re.sub("_R1_001.fastq.gz$", "_R2_001.fastq.gz", x) for x in r1s] 
-        reads = r1s + r2s
-
-        for read in reads:
-            input_fqs.add(read)
-    
-    print("running cellranger on the following fqs\nfastq\tsample", file = sys.stderr) 
-
-    for fq in input_fqs:
-        print("{}\t{}".format(fq, wildcards.sample), file = sys.stderr)
-
-    return input_fqs
-
-rule cellranger_count:
-    """ note that cellranger count will fail if the output directory
-    specified with ``--id`` exists prior to running. By default Snakemake 
-    will generate directories listed in the input and output params, so to
-    avoid this error this rule creates a dummy file "{sample}_complete.txt """
-
-    input:
-        _get_sample_fq_paths
+# Create antibody csv
+rule create_adt_csv:
     output:
-        "{results}/logs/{sample}.out"
+        "{results}/logs/antibody_csv.out"
     params:
-        fqs    = _get_sample_ids,
-        outdir = {RESULTS},
-        indir  = {DATA}
+        job_name = "adt_csv",
+        memory   = "select[mem>4] rusage[mem=4]",
+        adt_ref  = ADT_REF,
+        abs      = ANTIBODIES
     log:
-	"{results}/logs/{sample}"
+        "{results}/logs/antibody_csv"
     threads:
         1
     shell:
         """
-        set -x
+        if [[ {ADT_SAMPLES} != "none" ]]
+        then
+            adt_csv={RESULTS}/antibody_barcodes.csv
 
-        echo {params.fqs}
+            head -n 1 {params.adt_ref} \
+                > $adt_csv
 
-        {HOME}/cellranger-3.0.2/cellranger count \
-            --id={wildcards.sample} \
-            --fastqs={params.indir} \
-            --sample={params.fqs} \
-            --jobmode=local \
-            --project="scRNA-seq" \
-            --transcriptome={GENOME}
+            adt_str=$(echo {params.abs} | sed s/","/"|"/g)
 
-        mkdir -p {params.outdir}
-        mv -u {wildcards.sample} {params.outdir}
+            grep -E $adt_str {params.adt_ref} \
+                >> $adt_csv
+        fi
 
-        touch {output}
+        echo "done" \
+            > {output}
         """
+
+
+
+# Create library csv
+rule create_lib_csv:
+    input:
+        "{results}/logs/antibody_csv.out"
+    output:
+        "{results}/logs/{sample}_csv.out"
+    params:
+        job_name = "lib_csv",
+        memory   = "select[mem>4] rusage[mem=4]",
+        fqs      = _get_fqs
+    log:
+        "{results}/logs/{sample}_csv"
+    threads:
+        1
+    shell:
+        """
+        # Function to create csv containing library type and path
+        build_csv() {{
+            local fqs=$1
+            local lib_type=$2
+            local csv=$3
+          
+            local lane="_S[0-9]+_L[0-9]{{3}}_[RI][12]_001\.fastq\.gz$"
+            local no_lane="_S[0-9]+_[RI][12]_001\.fastq\.gz$"
+
+            IFS="," read -a fq_arr <<< $fqs
+    
+            for fq in ${{fq_arr[@]}}
+            do
+                if [[ ! $fq =~ $lane && ! $fq =~ $no_lane ]]
+                then
+                    echo "Unable to parse out sample id from $fq" \
+                        1>&2
+
+                    exit 1
+                fi
+
+                fq_name=$(basename $fq)
+                fq_path=$(echo $fq | sed -r "s/\/$fq_name//g")
+                fq_id=$(echo $fq_name | sed -r "s/$lane//g")
+                fq_id=$(echo $fq_id | sed -r "s/$no_lane//g")
+
+                echo $fq_path,$fq_id,$lib_type \
+                    >> $csv
+            done
+        }}
+
+
+        # Add entries for RNA libraries
+        lib_csv={RESULTS}/{wildcards.sample}.csv
+
+        echo fastqs,sample,library_type \
+            >> $lib_csv
+
+        build_csv {params.fqs[0]} "Gene Expression" $lib_csv
+
+
+        # Add entries for ADT libraries
+        if [[ {params.fqs[1]} != "none" ]]
+        then
+            build_csv {params.fqs[1]} "Antibody Capture" $lib_csv
+        fi
+
+        echo "done" \
+            > {output}
+        """
+
+
+
+# Run cellranger count
+rule cellranger_count:
+    input:
+        "{results}/logs/{sample}_csv.out"
+    output:
+        "{results}/logs/{sample}_count.out"
+    params:
+        job_name = "count",
+        memory   = "select[mem>4] rusage[mem=4]"
+    log:
+        "{results}/logs/{sample}_count"
+    shell:
+        """
+        job_id=$(echo {wildcards.sample} | cut -d "-" -f 1)
+        lib_csv={RESULTS}/{wildcards.sample}.csv
+        adt_csv={RESULTS}/antibody_barcodes.csv
+
+        if [[ ADT_SAMPLES == "none" ]]
+        then
+            {HOME}/PIPELINE/cellranger-3.0.2/cellranger count \
+                --id=$job_id \
+                --jobmode=local \
+                --libraries=$lib_csv \
+                --feature-ref=$adt_csv \
+                --project="scRNA-seq" \
+                --transcriptome={GENOME}
+
+        else
+            {HOME}/PIPELINE/cellranger-3.0.2/cellranger count \
+                --id=$job_id \
+                --jobmode=local \
+                --libraries=$lib_csv \
+                --project="scRNA-seq" \
+                --transcriptome={GENOME}
+        fi
+
+        mv -u $job_id {RESULTS}
+
+        echo "done" \
+            > {output}
+        """
+
+
+
+# Run cellranger aggr
+rule cellranger_aggr:
+    input:
+        expand(
+            "{results}/logs/{sample}_count.out",
+            results = RESULTS, sample = SAMPLES
+        )
+    output:
+        "{results}/logs/{group}_aggr.out"
+    params:
+        job_name = "aggr",
+        memory   = "select[mem>4] rusage[mem=4]",
+        group    = _create_group
+    log:
+        "{results}/logs/{group}_aggr"
+    threads:
+        1
+    shell:
+        """
+        {HOME}/PIPELINE/cellranger-3.0.2/cellranger aggr \
+            --id={params.group[0]} \
+            --csv={params.group[1]} \
+            --jobmode=local
+
+        mv -u {params.group[0]} {RESULTS}
+
+        echo "done" \
+            > {output}
+        """
+
 
 

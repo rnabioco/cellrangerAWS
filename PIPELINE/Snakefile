@@ -3,23 +3,53 @@ shell.executable("/bin/bash")
 import os 
 import glob
 
-SAMPLES      = config["SAMPLES"]
-EXPT_GROUPS  = config["EXPT_GROUPS"]
-GENOME       = config["GENOME"]
-MAX_10X_JOBS = config["MAX_10X_JOBS"]
 
-HOME    = os.path.expanduser("~")
-DATA    = os.path.join("/mnt/EBS/DATA")
+# Inputs from config.yaml
+RNA_SAMPLES = config["RNA_SAMPLES"]
+ADT_SAMPLES = config["ADT_SAMPLES"]
+ANTIBODIES  = config["ANTIBODIES"]
+GENOME      = config["GENOME"]
+
+
+
+# Set paths
+HOME    = os.path.expanduser("~/Projects/cellrangerAWS")
+
+#DATA    = os.path.join("/mnt/EBS/DATA")
+DATA    = os.path.join(HOME, "PIPELINE/DATA")
+DATA    = "/home/rmsheridan/Projects/cellrangerAWS/PIPELINE/DATA"
+
 RESULTS = os.path.join(HOME, "PIPELINE/RESULTS")
 GENOME  = os.path.join(HOME, "PIPELINE/ref", GENOME)
+ADT_REF = os.path.join(HOME, "PIPELINE/Totalseq_111518.csv")
+
+
+
+# Set sample names
+SAMPLES = RNA_SAMPLES
+GROUP   = "-".join(RNA_SAMPLES)
+
+if ADT_SAMPLES is not None:
+    SAMPLES = [x + "-" + y for x, y in zip(RNA_SAMPLES, ADT_SAMPLES)]
+
+else:
+    ADT_SAMPLES = "none"
+
+
 
 # Final output files
 rule all:
     input:
         expand(
-            "{results}/logs/{sample}.out",
+            "{results}/logs/{sample}_count.out",
             results = RESULTS, sample = SAMPLES
-        )
+        ),
+        expand(
+            "{results}/logs/{group}_aggr.out",
+            results = RESULTS, group = GROUP
+       )
+
 
 include: "cellranger.snake"
+
 
