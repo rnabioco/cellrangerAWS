@@ -106,7 +106,7 @@ check_state() {
     do
         state=$("$input_fun")
 
-        if [[ ! -z $state ]]
+        if [[ ! -z "$state" ]]
         then
             break
         fi
@@ -133,9 +133,9 @@ key_name=$(basename -s .pem "$KEY")
 
 ec2_id=$(
     aws ec2 run-instances \
-        --image-id "$AMI" \
         --instance-type "$EC2_TYPE" \
 	--placement AvailabilityZone="$ZONE" \
+        --image-id "$AMI" \
 	--key-name "$key_name" \
         --associate-public-ip-address \
         --security-group-ids "$SECURITY_GROUP" \
@@ -173,8 +173,8 @@ if [[ "$CREATE_VOL" == true ]]
 then
     vol_id=$(
         aws ec2 create-volume \
-            --availability-zone "$ZONE" \
 	    --size "$VOLUME_SIZE" \
+            --availability-zone "$ZONE" \
 	    | grep -E -o "vol\-[[:alnum:]]+"
     )
 
@@ -183,8 +183,8 @@ else
 
     vol_id=$(
         aws ec2 create-volume \
-            --availability-zone "$ZONE" \
             --snapshot-id "$snap_id" \
+            --availability-zone "$ZONE" \
 	    | grep -E -o "vol\-[[:alnum:]]+"
     )
 fi
@@ -256,12 +256,17 @@ then
     scp -i "$KEY" "$INPUT"/*.fastq.gz "$ssh":/mnt/EBS/DATA
     scp -i "$KEY" "$INPUT"/config.yaml "$ssh":/mnt/EBS/DATA
 
+    ssh -i "$KEY" "$ssh" bash <<EOF
+        sudo chmod -R 777 /mnt/EBS
+        cp /mnt/EBS/DATA/config.yaml /mnt/EBS/DATA/config.txt
+EOF
+
     snap_name="$PROJECT_NAME"_"$TIME"
 
     snap_id=$(
         aws ec2 create-snapshot \
-            --description "$snap_name" \
             --volume-id "$vol_id" \
+            --description "$snap_name" \
 	    | grep -E -o "snap\-[[:alnum:]]+"
     	)
 fi
@@ -274,6 +279,11 @@ ssh -i "$KEY" "$ssh" \
 
 scp -r -i "$KEY" "$ssh":/home/"$USER"/PIPELINE/RESULTS/logs "$OUTPUT"
 #scp -r -i "$KEY" "$ssh":/home/"$USER"/PIPELINE/RESULTS/* "$OUTPUT"     # NEED TO CHANGE THIS!!!!!
+
+
+
+# REMOVE AFTER TESTING!!!!
+exit 0
 
 
 
