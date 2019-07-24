@@ -7,7 +7,7 @@ set -x -o pipefail
 # Inputs
 EC2_TYPE="t2.micro"
 AMI="ami-07b4f3c02c7f83d59"  # Ubuntu 18.04 server image
-VOLUME_SIZE=60
+VOLUME_SIZE=100
 ZONE="us-west-2a"
 KEY="$HOME/.ssh/sheridar-key-pair-uswest2.pem"
 SECURITY_GROUP="sg-00cf9318d9719735d"
@@ -108,10 +108,10 @@ scp -r -i "$KEY" PIPELINE "$ssh":/home/"$USER"
 ssh -i "$KEY" "$ssh" bash <<EOF
     tar -zxf "$ec2_pipeline"/cellranger-3.0.2.tar.gz
     rm "$ec2_pipeline"/cellranger-3.0.2.tar.gz
-
-    tar -zxf "$ec2_pipeline"/ref/*.tar.gz -C "$ec2_pipeline"/ref
-    rm "$ec2_pipeline"/ref/*.tar.gz
 EOF
+
+#tar -zxf "$ec2_pipeline"/ref/GRCh38.tar.gz -C "$ec2_pipeline"/ref
+#rm "$ec2_pipeline"/ref/*.tar.gz
 
 
 
