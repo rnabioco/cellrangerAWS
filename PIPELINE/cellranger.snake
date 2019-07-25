@@ -199,7 +199,7 @@ rule cellranger_count:
 
         if [[ ADT_SAMPLES == "none" ]]
         then
-            {HOME}/PIPELINE/cellranger-3.0.2/cellranger count \
+            {HOME}/cellranger-3.0.2/cellranger count \
                 --id=$job_id \
                 --jobmode=local \
                 --libraries=$lib_csv \
@@ -208,7 +208,7 @@ rule cellranger_count:
                 --transcriptome={GENOME}
 
         else
-            {HOME}/PIPELINE/cellranger-3.0.2/cellranger count \
+            {HOME}/cellranger-3.0.2/cellranger count \
                 --id=$job_id \
                 --jobmode=local \
                 --libraries=$lib_csv \
@@ -243,7 +243,7 @@ rule cellranger_aggr:
         1
     shell:
         """
-        {HOME}/PIPELINE/cellranger-3.0.2/cellranger aggr \
+        {HOME}/cellranger-3.0.2/cellranger aggr \
             --id={params.group[0]} \
             --csv={params.group[1]} \
             --jobmode=local
