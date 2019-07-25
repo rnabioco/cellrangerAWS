@@ -1,11 +1,18 @@
 #! /bin/bash
 
-mkdir -p /mnt/EBS/RESULTS/logs
+snakemake="$HOME/.local/bin/snakemake"
+data_dir="/mnt/EBS/DATA"
+res_dir="/mnt/EBS/RESULTS"
+log_dir="$res_dir/logs"
+pipeline="$HOME/PIPELINE"
 
-~/.local/bin/snakemake \
-    --snakefile ~/PIPELINE/Snakefile \
+mkdir -p "$log_dir"
+
+"$snakemake" \
+    --snakefile "$pipeline/Snakefile" \
     --latency-wait 60 \
-    --rerun-incomplete  \
-    --configfile /mnt/EBS/DATA/config.yaml \
-    > /mnt/EBS/RESULTS/logs/cellranger.err 2>&1
+    --rerun-incomplete \
+    --configfile "$data_dir/config.yaml" \
+    > "$log_dir/cellranger.out" \
+    2>&1
 

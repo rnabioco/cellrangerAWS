@@ -87,7 +87,7 @@ rule create_adt_csv:
         adt_ref  = ADT_REF,
         abs      = ANTIBODIES
     log:
-        "{results}/logs/antibody_csv"
+        "{results}/logs/antibody_csv.out"
     threads:
         1
     shell:
@@ -122,7 +122,7 @@ rule create_lib_csv:
         memory   = "select[mem>4] rusage[mem=4]",
         fqs      = _get_fqs
     log:
-        "{results}/logs/{sample}_csv"
+        "{results}/logs/{sample}_csv.out"
     threads:
         1
     shell:
@@ -190,7 +190,7 @@ rule cellranger_count:
         job_name = "count",
         memory   = "select[mem>4] rusage[mem=4]"
     log:
-        "{results}/logs/{sample}_count"
+        "{results}/logs/{sample}_count.out"
     shell:
         """
         job_id=$(echo {wildcards.sample} | cut -d "-" -f 1)
@@ -199,7 +199,7 @@ rule cellranger_count:
 
         if [[ ADT_SAMPLES == "none" ]]
         then
-            {HOME}/cellranger-3.0.2/cellranger count \
+            {CELLRANGER} count \
                 --id=$job_id \
                 --jobmode=local \
                 --libraries=$lib_csv \
@@ -208,7 +208,7 @@ rule cellranger_count:
                 --transcriptome={GENOME}
 
         else
-            {HOME}/cellranger-3.0.2/cellranger count \
+            {CELLRANGER} count \
                 --id=$job_id \
                 --jobmode=local \
                 --libraries=$lib_csv \
@@ -238,12 +238,12 @@ rule cellranger_aggr:
         memory   = "select[mem>4] rusage[mem=4]",
         group    = _create_group
     log:
-        "{results}/logs/{group}_aggr"
+        "{results}/logs/{group}_aggr.out"
     threads:
         1
     shell:
         """
-        {HOME}/cellranger-3.0.2/cellranger aggr \
+        {CELLRANGER} aggr \
             --id={params.group[0]} \
             --csv={params.group[1]} \
             --jobmode=local

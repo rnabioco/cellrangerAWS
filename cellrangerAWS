@@ -1,6 +1,6 @@
 #! /bin/bash
 
-set -o nounset -o pipefail
+set -x -o nounset -o pipefail -o errexit
 
 
 # Inputs
@@ -11,9 +11,10 @@ KEY="none"
 
 EC2_ID="none"
 EC2_TYPE="t2.2xlarge"
-AMI="ami-0f045956ed47d262b"
+AMI="ami-0e3cbf9c48f5ef482"
 CREATE_VOL=true
 VOLUME_SIZE=50
+MANUAL_MODE=false
 
 ZONE="us-west-2a"
 SECURITY_GROUP="sg-00cf9318d9719735d"
@@ -29,15 +30,16 @@ USAGE
 "$0" [OPTIONS]
 
 OPTIONS
--h, display this message
--i, path to input directory containing fastq files and config.yaml or ID for snapshot containing data
--o, path to output directory
--k, path to AWS private key
--p, project name (default is \"cellranger\")
--e, ID for EC2 instance with an EBS volume already mounted, by default a new instance is created
--t, EC2 instance type (default is "$EC2_TYPE")
--s, size of EBS volume in GiB, by default this is set based on the size of the fastqs present in the input directory
--a, ID for machine image configured to run cellranger (default is "$AMI")
+-h, display this message.
+-i, path to input directory containing fastq files and config.yaml or ID for snapshot containing data.
+-o, path to output directory.
+-k, path to AWS private key.
+-p, project name, this is used to name saved snapshots (default is \"cellranger\").
+-t, EC2 instance type (default is "$EC2_TYPE").
+-s, size of EBS volume in GiB, by default this is set based on the size of the fastqs present in the input directory.
+-e, ID for EC2 instance configured to run cellranger, by default a new instance is created.
+-a, ID for machine image configured to run cellranger (default is "$AMI").
+-m, run in manual mode, this launches an EC2 instance, mounts an EBS volume and exits.
 
     """
 }
@@ -45,7 +47,7 @@ OPTIONS
 
 
 # Parse arguments
-while getopts ":hi:o:k:p:e:t:s:a:" args
+while getopts ":hi:o:k:p:t:s:e:a:m" args
 do
     case "$args" in
         help)
@@ -69,17 +71,20 @@ do
         p)
             PROJECT="$OPTARG"
             ;;
-        e)
-            EC2_ID="$OPTARG"
-            ;;
         t)
             EC2_TYPE="$OPTARG"
             ;;
         s)
             VOLUME_SIZE="$OPTARG"
             ;;
+        e)
+            EC2_ID="$OPTARG"
+            ;;
         a)
             AMI="$OPTARG"
+            ;;
+        m)
+            MANUAL_MODE=true
             ;;
         :)
             echo -e "\nERROR: -$OPTARG requires an argument"
@@ -106,23 +111,29 @@ fi
 
 # Check instance/volume status
 check_status() {
-    local input_fun=$1
-    local id=$2
+    local input_fun="$1"
+    local id="$2"
+    local num=60
 
-    echo -e "\nChecking for $input_fun $id...\n"
+    if [[ $# == 3 ]]
+    then
+        local num="$3"
+    fi
+
+    echo -e "\nChecking for $input_fun $id..."
 
 
-    for i in $(seq 1 60)
+    for i in $(seq 1 "$num")
     do
         if "$input_fun" "$id" | grep --quiet "$id"
         then
             return 0
         fi
 
-        sleep 5
+        sleep 10
     done
 
-    echo -e "\nERROR: Timed out waiting for $input_fun $id.\n"
+    echo -e "\nERROR: Timed out waiting for $input_fun $id."
 
     exit 1
 }
@@ -177,7 +188,7 @@ launch_ec2() {
 get_dns() {
     local ec2="$1"
 
-    echo -e "\nAttempting to make contact with EC2 instance $ec2...\n"
+    echo -e "\nAttempting to make contact with EC2 instance $ec2..."
 
 
     # Retrieve public IP to check connectivity
@@ -211,7 +222,7 @@ get_dns() {
 
             ec2_ssh="$EC2_USER@$dns"
 
-            echo -e """
+            echo """
 Connection has been established with EC2 instance $ec2.
 
 Use the following command to manually connect to the instance:
@@ -228,7 +239,7 @@ ssh -i "$KEY" "$ec2_ssh"
     aws ec2 terminate-instances \
         --instance-ids "$ec2"
 
-    echo -e "\nERROR: Unable to connect, terminating EC2 instance $ec2...\n"
+    echo -e "ERROR: Unable to connect, terminating EC2 instance $ec2..."
 
     exit 1
 }
@@ -243,7 +254,7 @@ create_ebs() {
     local zone=$4
     local ssh=$5
 
-    echo -e "\nCreating EBS volume...\n"
+    echo -e "Creating EBS volume..."
 
 
     # Get list of attached devices, need this to identify attached EBS volume
@@ -272,7 +283,7 @@ create_ebs() {
                 | grep -E -o "vol\-[[:alnum:]]+"
         )
 
-        local vol_msg="\nEBS volume $vol_id ($vol_size GiB) was created and mounted to EC2 instance $ec2.\n"
+        local vol_msg="\nEBS volume $vol_id ($vol_size GiB) was created and mounted to EC2 instance $ec2."
 
     else
         vol_id=$(
@@ -282,7 +293,7 @@ create_ebs() {
 	        | grep -E -o "vol\-[[:alnum:]]+"
         )
 
-        local vol_msg="\nEBS volume $vol_id was created from snapshot $INPUT and mounted to EC2 instance $ec2.\n"
+        local vol_msg="\nEBS volume $vol_id was created from snapshot $INPUT and mounted to EC2 instance $ec2."
     fi
 
     available_vol() {
@@ -360,26 +371,41 @@ transfer_data() {
     local vol="$2"
     local ssh="$3"
     local snap_name="$4"
-    local snap_id="$1"
 
     
     if "$CREATE_VOL"
     then
-	echo -e "\nTransferring data to EBS volume $vol...\n"
+	echo -e "\nTransferring data to EBS volume $vol..."
 
-        scp -i "$KEY" "$input"/*.fastq.gz "$ssh":/mnt/EBS/DATA
-        scp -i "$KEY" "$input"/config.yaml "$ssh":/mnt/EBS/DATA
+        scp -i "$KEY" "$input/"*".fastq.gz" "$ssh:/mnt/EBS/DATA"
+        scp -i "$KEY" "$input/config.yaml" "$ssh:/mnt/EBS/DATA"
+
+	ssh -i "$KEY" "$ssh" \
+            gzip "/mnt/EBS/DATA/config.yaml"
+
+	wait
 
         # Save snapshot of EBS volume
-        snap_id=$(
+        local snap_id=$(
             aws ec2 create-snapshot \
                 --description "$snap_name" \
                 --volume-id "$vol" \
 	        | grep -E -o "snap\-[[:alnum:]]+"
     	)
 
-	echo -e "\nEBS volume $vol has been saved to snapshot $snap_id.\n"
+        completed_snap() {
+            aws ec2 describe-snapshots \
+                --snapshot-ids "$1" \
+                --filters Name=status,Values=completed
+        }
+
+        check_status completed_snap "$snap_id" 120
+
+	echo -e "\nEBS volume $vol has been saved to snapshot $snap_id, samples can be re-run using the following command:\n$0 -i $snap_id -o $OUTPUT -k $KEY"
     fi
+    
+#    ssh -i "$KEY" "$ssh" \
+#        gunzip "/mnt/EBS/DATA/config.yaml.gz"
 }
 
 
@@ -388,25 +414,14 @@ transfer_data() {
 terminate_ec2() {
     local ec2="$1"
     local vol="$2"
-    local snap="$3"
-
-
-    # Make sure snapshot has been saved before terminating EC2 instance
-    completed_snap() {
-        aws ec2 describe-snapshots \
-            --snapshot-ids "$1" \
-            --filters Name=status,Values=completed
-    }
-
-    check_status completed_snap "$snap"
-
 
 
     # Terminate EC2 instance
-    echo -e "\nTerminating EC2 instance "$ec2"\n"
+    echo -e "\nTerminating EC2 instance $ec2..."
 
     aws ec2 terminate-instances \
-        --instance-ids "$ec2"
+        --instance-ids "$ec2" \
+        > /dev/null
 
     terminated_ec2() {
         aws ec2 describe-instances \
@@ -419,21 +434,13 @@ terminate_ec2() {
 
 
     # Delete EBS volume
-    echo -e "\nDeleting EBS volume $vol...\n"
+    echo -e "\nDeleting EBS volume $vol..."
 
     aws ec2 delete-volume \
-        --volume-id "$vol"
+        --volume-id "$vol" \
+        > /dev/null
 
-    echo """
-
-EC2 instance $ec2_id has been terminated and EBS volume $vol_id has been deleted.
-
-Fastqs have been saved to snapshot $snap.
-
-Samples can be re-run using the following command:
-$0 -i $snap_id -o $OUTPUT -k $KEY
-
-    """
+    echo -e "\nEC2 instance $ec2_id has been terminated and EBS volume $vol_id has been deleted."
 }
 
 
@@ -441,24 +448,28 @@ $0 -i $snap_id -o $OUTPUT -k $KEY
 # Main function
 main() {
   
-
     # Set project name
     project_name="$PROJECT"_$(date +%Y%m%d-%H%M%S)
 
 
 
     # Calculate EBS volume size
-    data_size=$(
-        du -shc -BG "$INPUT" \
-            | grep "total" \
-            | grep -E -o "[0-9]+"
-    )
+    volume_size="$VOLUME_SIZE"
 
-    volume_size=$(expr "$data_size" \* 2)
-
-    if [[ "$VOLUME_SIZE" > "$volume_size" ]]
+    if "$CREATE_VOL"
     then
-        volume_size="$VOLUME_SIZE"
+        data_size=$(
+            du -shc -BG "$INPUT" \
+                | grep "total" \
+                | grep -E -o "[0-9]+"
+        )
+
+        volume_size=$(expr "$data_size" \* 2)
+
+        if [[ "$VOLUME_SIZE" > "$volume_size" ]]
+        then
+            volume_size="$VOLUME_SIZE"
+        fi
     fi
 
 
@@ -483,7 +494,7 @@ main() {
 
 
 
-    # Create EBS volume and transfer data
+    # Create EBS volume, transfer data, and create snapshot
     if [[ "$EC2_ID" == "none" ]]
     then
         # Create EBS volume and retrieve vol_id
@@ -494,7 +505,7 @@ main() {
             "$ZONE" \
             "$ec2_ssh"
 
-        # Transfer data to EBS volume and retrieve snap_id
+        # Transfer data to EBS volume and create snapshot
         transfer_data \
             "$INPUT" \
             "$vol_id" \
@@ -502,15 +513,20 @@ main() {
             "$project_name"
     fi
 
+    if "$MANUAL_MODE"
+    then
+        exit 0
+    fi
+
 
 
     # Run cellranger and transfer results
-    echo -e "\nBeginning cellranger run...\n"
+    echo -e "\nBeginning Cell Ranger run..."
 
     ssh -i "$KEY" "$ec2_ssh" \
         bash "/home/$EC2_USER/PIPELINE/snakecharmer.sh"
 
-    echo -e "Cellranger run has completed, transferring results to $OUTPUT.\n"
+    echo -e "\nCell Ranger run has completed, transferring results to $OUTPUT."
 
     rsync -r -e "ssh -i $KEY" --exclude possorted_genome_bam.bam* \
         "$ec2_ssh:/mnt/EBS/RESULTS/"* "$OUTPUT"
@@ -522,8 +538,7 @@ main() {
     then
         terminate_ec2 \
             "$ec2_id" \
-            "$vol_id" \
-            "$snap_id"
+            "$vol_id"
     fi
 }
 
