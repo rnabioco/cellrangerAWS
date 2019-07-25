@@ -1,13 +1,13 @@
 #! /bin/bash
 
-set -x -o nounset -o pipefail -o errexit
+set -o nounset -o pipefail -o errexit
 
 
 
 # Inputs
-INPUT="none"
-OUTPUT="none"
-KEY="none"
+INPUT=false
+OUTPUT=false
+KEY=false
 PROJECT="cellranger"
 EC2_TYPE="t2.2xlarge"
 AMI="ami-0b223f110bbbd4a9e"
@@ -16,16 +16,15 @@ VOLUME_SIZE=50
 ZONE="us-west-2a"
 SECURITY_GROUP="sg-00cf9318d9719735d"
 SUBNET="subnet-083a3a855e543ee1c"
-USER="ubuntu"
+EC2_USER="ubuntu"
 
 
 
 # Usage message
 usage() {
     echo """
-
 USAGE
-$0 [OPTIONS]
+"$0" [OPTIONS]
 
 OPTIONS
 -h, display this message
@@ -34,7 +33,7 @@ OPTIONS
 -p, project name
 -k, path to AWS private key
 -t, EC2 instance type (default is "$EC2_TYPE")
--s, size of EBS volume in GB, by default this is set based on the size of the fastqs present in the input directory
+-s, size of EBS volume in GiB, by default this is set based on the size of the fastqs present in the input directory
 -a, ID for machine image configured to run cellranger (default is "$AMI")
 
     """
@@ -89,9 +88,9 @@ do
     esac
 done
 
-if [[ "$INPUT" == "none" || "$OUTPUT" == "none" || "$KEY" == "none" ]]
+if [[ "$INPUT" == false || "$OUTPUT" == false || "$KEY" == false ]]
 then
-    echo -e "\nERROR: arguments are required for -i, -o, and -k"
+    echo -e "\nERROR: Arguments are required for -i, -o, and -k."
 
     usage
     exit 1
@@ -114,7 +113,7 @@ check_status() {
         sleep 5
     done
 
-    echo -e "\nERROR: timed out waiting for $input_fun\n"
+    echo -e "\nERROR: Timed out waiting for $input_fun $id.\n"
 
     exit 1
 }
@@ -136,6 +135,7 @@ launch_ec2() {
 
 
     # Launch EC2 instance
+    # Public DNS is not listed in run-instances output, this must be retrieved separately
     local ec2=$(
         aws ec2 run-instances \
             --instance-type "$ec2_type" \
@@ -168,6 +168,7 @@ launch_ec2() {
 get_dns() {
     local ec2="$1"
 
+
     # Retrieve public IP to check connectivity
     local ip=$(
         aws ec2 describe-instances \
@@ -185,7 +186,7 @@ get_dns() {
                 | grep -E -o "[0-9]+"
         )
 
-        # Return public DNS for ssh
+        # If IP responds to ping, return public DNS
         if [[ "$packet_loss" < 100 ]]
         then
             local dns=$(
@@ -195,17 +196,18 @@ get_dns() {
                     | head -n 1
             )
 
-            echo "$USER@$dns"
+            echo "$EC2_USER@$dns"
 
             return 0
         fi
     done
 
-    # If unable to ping IP, terminate instance
+
+    # If IP does not respond to ping, terminate instance
     aws ec2 terminate-instances \
         --instance-ids "$ec2"
 
-    echo "ERROR: unable to connect, terminating EC2 instance"
+    echo -e "\nERROR: Unable to connect, terminating EC2 instance $ec2.\n"
 
     exit 1
 }
@@ -221,7 +223,7 @@ create_ebs() {
     local ssh=$5
 
 
-    # Get list of attached devices, need this to identify newly attached device
+    # Get list of attached devices, need this to identify attached EBS volume
     old_devs=$(
         ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ssh" \
             sudo fdisk -l \
@@ -278,8 +280,6 @@ create_ebs() {
 
     check_status attached_vol "$vol"
 
-    sleep 60
-
 
     # Identify device path for EBS volume
     new_devs=$(
@@ -309,7 +309,7 @@ EOF
 
 
     # Mount EBS volume and transfer data
-    ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ssh" bash <<EOF
+    ssh -i "$KEY" "$ssh" bash <<EOF
         sudo mkdir -p /mnt/EBS
         sudo mount "$dev_path" /mnt/EBS
         sudo mkdir -p /mnt/EBS/DATA
@@ -317,7 +317,7 @@ EOF
 EOF
 
 
-    # Return ID for attached EBS volume
+    # Return ID for mounted EBS volume
     echo "$vol"
 }
 
@@ -337,6 +337,7 @@ transfer_data() {
         scp -i "$KEY" "$input"/*.fastq.gz "$ssh":/mnt/EBS/DATA
         scp -i "$KEY" "$input"/config.yaml "$ssh":/mnt/EBS/DATA
 
+        # Save snapshot of EBS volume
         local snap=$(
             aws ec2 create-snapshot \
                 --description "$snap_name" \
@@ -383,15 +384,6 @@ terminate_ec2() {
     # Delete EBS volume
     aws ec2 delete-volume \
         --volume-id "$vol"
-
-    echo """
-
-Data have been saved to snapshot $snap.
-
-Samples can be re-run using the following command:
-$0 -i $snap -o $OUTPUT -k $KEY
-
-    """
 }
 
 
@@ -401,6 +393,7 @@ main() {
    
     # Set project name
     project_name="$PROJECT"_$(date +%Y%m%d-%H%M%S)
+
 
 
     # Set EBS volume size
@@ -418,7 +411,10 @@ main() {
     fi
 
 
+
     # Launch EC2 instance
+    echo -e "\nLaunching EC2 $EC2_TYPE instance..."
+
     ec2_id=$(
         launch_ec2 \
             "$AMI" \
@@ -428,13 +424,27 @@ main() {
             "$SUBNET"
     )
 
+    echo -e "\nEC2 instance $ec2_id has been successfully launched."
+
+
 
     # Retrieve public DNS for ssh and check connectivity
-    # Public DNS is not listed in run-instances output
+    echo -e "\nAttempting to make contact with EC2 instance $ec2_id..."
+
     ec2_ssh=$(get_dns "$ec2_id")
+
+    echo -e """
+Connection has been established with EC2 instance $ec2_id.
+
+Use the following command to manually connect to the instance:
+ssh -i "$KEY" "$ec2_ssh"
+    """
+
 
 
     # Create EBS volume
+    echo -e "Creating EBS volume...\n"
+
     vol_id=$(
         create_ebs \
             "$INPUT" \
@@ -443,6 +453,16 @@ main() {
             "$ZONE" \
 	    "$ec2_ssh"
     )
+
+    vol_msg="EBS volume $vol_id was created from snapshot $INPUT and mounted to EC2 instance $ec2_id.\n"
+
+    if [[ "$CREATE_VOL" == true ]]
+    then
+        vol_msg="EBS volume $vol_id ($volume_size GiB) was created and mounted to EC2 instance $ec2_id. Beginning transfer of fastqs from $INPUT.\n"
+    fi
+
+    echo -e "$vol_msg"
+
 
 
     # Transfer data to EBS volume
@@ -454,13 +474,24 @@ main() {
 	    "$project_name"
     )
 
+    if [[ "$CREATE_VOL" == true ]]
+    then
+        echo -e "\nFastqs have been successfully transferred to EBS volume $vol_id. The volume has been saved to snapshot $snap_id.\n"
+    fi
+
+    echo -e "\nBeginning cellranger run.\n"
+
+
 
     # Run cellranger and transfer results
     ssh -i "$KEY" "$ec2_ssh" \
-        bash "/home/$USER/PIPELINE/snakecharmer.sh"
+        bash "/home/$EC2_USER/PIPELINE/snakecharmer.sh"
+
+    echo -e "Cellranger run has completed, transferring results to $OUTPUT.\n"
 
     rsync -r -e "ssh -i $KEY" --exclude possorted_genome_bam.bam* \
         "$ec2_ssh:/mnt/EBS/RESULTS/"* "$OUTPUT"
+
 
 
     # Terminate EC2 instance
@@ -468,6 +499,17 @@ main() {
         "$ec2_id" \
         "$vol_id" \
         "$snap_id"
+
+    echo """
+
+EC2 instance $ec2_id has been terminated and EBS volume $vol_id has been deleted.
+
+Fastqs have been saved to snapshot $snap.
+
+Samples can be re-run using the following command:
+$0 -i $snap_id -o $OUTPUT -k $KEY
+
+    """
 }
 
 
