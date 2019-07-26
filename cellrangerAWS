@@ -1,6 +1,6 @@
 #! /bin/bash
 
-set -x -o nounset -o pipefail -o errexit
+set -o nounset -o pipefail -o errexit -x
 
 
 # Inputs
@@ -376,7 +376,7 @@ create_ebs() {
     local new_devs=$(
         ssh -i "$KEY" "$EC2_SSH" \
             sudo fdisk -l \
-                | grep -E "^Disk .+$vol_size GB" \
+                | grep -E "^Disk .+$vol_size GiB" \
                 | grep -E -o "/dev/[[:alnum:]]+" \
                 2>&1
     )
@@ -407,7 +407,7 @@ EOF
 
 
 
-# Transfer data from S3 to EBS volume ==========================================
+# Create access keys, transfer data from S3 bucket to EBS volume ===============
 
 transfer_to_ec2() {
     local aws_user="$1"
@@ -421,29 +421,41 @@ transfer_to_ec2() {
             --user-name "$aws_user"
     )
 
-    local secret_key=$(
+    local iam_key=$(
         echo "$user_info" \
             | grep "SecretAccessKey" \
 	    | cut -d ":" -f 2 \
 	    | sed 's/[\",]//g'
     )
 
-    local key_id=$(
+    iam_id=$(
         echo "$user_info" \
             | grep "AccessKeyId" \
             | cut -d ":" -f 2 \
-            | sed 's/[\".]//g'
+            | sed 's/[\". ]//g'
     )
 
+
+
+    aws_cmds="#! /bin/bash\naws configure set aws_secret_access_key $iam_key\naws configure set aws_access_key_id $iam_id\n"
+
     ssh -i "$KEY" "$EC2_SSH" \
-        pip3 install awscli --upgrade
+        echo $aws_cmds > ~/run_aws.sh
 
-    wait
+    ssh -i "$KEY" "$EC2_SSH" \
+        bash ~/run_aws.sh
 
-    ssh -i "$KEY" "$EC2_SSH" bash <<EOF
-        aws configure set aws_secret_access_key "$secret_key"
-        aws configure set aws_access_key_id "$key_id"
-EOF
+
+    #ssh -i "$KEY" "$EC2_SSH" \
+    #    aws configure set aws_secret_access_key "$iam_key"
+
+    #ssh -i "$KEY" "$EC2_SSH" \
+    #    aws configure set aws_access_key_id "$iam_id"
+
+#    ssh -i "$KEY" "$EC2_SSH" bash <<EOF
+#        aws configure set aws_secret_access_key "$secret_key"
+#        aws configure set aws_access_key_id "$key_id"
+#EOF
 
 
 
@@ -472,6 +484,7 @@ EOF
 terminate_ec2() {
     local ec2="$1"
     local vol="$2"
+    local id="$3"
 
 
 
@@ -500,6 +513,12 @@ terminate_ec2() {
         > /dev/null
 
     echo -e "\nEC2 instance $ec2_id has been terminated and EBS volume $vol_id has been deleted."
+
+
+
+    # Delete access keys
+    aws iam delete-access-key \
+        --access-key-id $id
 }
 
 
@@ -573,12 +592,13 @@ main() {
 
 
 
-    # Terminate EC2 instance
+    # Terminate EC2 instance and delete access keys
     if [[ "$EC2_ID" == "none" ]]
     then
         terminate_ec2 \
             "$ec2_id" \
-            "$vol_id"
+            "$vol_id" \
+	    "$iam_id"
     fi
 }
 
