@@ -12,7 +12,7 @@ mkdir -p "$log_dir"
     --snakefile "$pipeline/Snakefile" \
     --latency-wait 60 \
     --rerun-incomplete \
-    --configfile "$data_dir/config.yaml" \
+    --configfile "$HOME/config.yaml" \
     > "$log_dir/cellranger.out" \
     2>&1
 

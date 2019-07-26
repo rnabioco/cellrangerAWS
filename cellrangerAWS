@@ -6,12 +6,13 @@ set -x -o nounset -o pipefail -o errexit
 # Inputs
 PROJECT="cellranger"
 INPUT="none"
+CONFIG="none"
 OUTPUT="none"
 KEY="none"
 
 EC2_ID="none"
 EC2_TYPE="t2.2xlarge"
-AMI="ami-0e3cbf9c48f5ef482"
+AMI="ami-0a5271f1933bebca3"
 CREATE_VOL=true
 VOLUME_SIZE=50
 MANUAL_MODE=false
@@ -20,7 +21,6 @@ ZONE="us-west-2a"
 SECURITY_GROUP="sg-00cf9318d9719735d"
 SUBNET="subnet-083a3a855e543ee1c"
 EC2_USER="ubuntu"
-
 
 
 # Usage message
@@ -32,6 +32,7 @@ USAGE
 OPTIONS
 -h, display this message.
 -i, path to input directory containing fastq files and config.yaml or ID for snapshot containing data.
+-c, path to config.yaml.
 -o, path to output directory.
 -k, path to AWS private key.
 -p, project name, this is used to name saved snapshots (default is \"cellranger\").
@@ -46,8 +47,11 @@ OPTIONS
 
 
 
-# Parse arguments
-while getopts ":hi:o:k:p:t:s:e:a:m" args
+
+
+# Parse arguments =============================================================
+
+while getopts ":hi:c:o:k:p:t:s:e:a:m" args
 do
     case "$args" in
         help)
@@ -61,6 +65,9 @@ do
             then
                 CREATE_VOL=false
             fi
+            ;;
+        c)
+            CONFIG="$OPTARG"
             ;;
         o)
             OUTPUT="$OPTARG"
@@ -99,9 +106,9 @@ do
     esac
 done
 
-if [[ "$INPUT" == "none" || "$OUTPUT" == "none" || "$KEY" == "none" ]]
+if [[ "$INPUT" == "none" || "$CONFIG" == "none" || "$OUTPUT" == "none" || "$KEY" == "none" ]]
 then
-    echo -e "\nERROR: Arguments are required for -i, -o, and -k."
+    echo -e "\nERROR: Arguments are required for -i, -c, -o, and -k."
 
     usage
     exit 1
@@ -109,7 +116,10 @@ fi
 
 
 
-# Check instance/volume status
+
+
+# Check instance/volume status ================================================
+
 check_status() {
     local input_fun="$1"
     local id="$2"
@@ -121,7 +131,6 @@ check_status() {
     fi
 
     echo -e "\nChecking for $input_fun $id..."
-
 
     for i in $(seq 1 "$num")
     do
@@ -140,11 +149,14 @@ check_status() {
 
 
 
-# Launch EC2 instance
+
+
+# Launch EC2 instance ==========================================================
 # When using default VPC the instance does not have internet access. To resolve
 # this create new VPC, security group, subnet, and internet gateway. Activate
 # public IP for subnet, activate public DNS for VPC, attach VPC to internet
 # gateway, modify route table for VPC.
+
 launch_ec2() {
     local ami="$1"
     local ec2_type="$2"
@@ -157,7 +169,8 @@ launch_ec2() {
 
 
     # Launch EC2 instance
-    # Public DNS is not listed in run-instances output, this must be retrieved separately
+    # Public DNS is not listed in run-instances output, this must be retrieved
+    # separately
     ec2_id=$(
         aws ec2 run-instances \
             --instance-type "$ec2_type" \
@@ -184,11 +197,15 @@ launch_ec2() {
 
 
 
-# Retrieve public DNS for EC2 instance and check connectivity
+
+
+# Retrieve public DNS for EC2 instance and check connectivity ==================
+
 get_dns() {
     local ec2="$1"
 
     echo -e "\nAttempting to make contact with EC2 instance $ec2..."
+
 
 
     # Retrieve public IP to check connectivity
@@ -222,12 +239,9 @@ get_dns() {
 
             ec2_ssh="$EC2_USER@$dns"
 
-            echo """
-Connection has been established with EC2 instance $ec2.
-
-Use the following command to manually connect to the instance:
-ssh -i "$KEY" "$ec2_ssh"
-            """
+            echo -e "\nConnection has been established with EC2 instance $ec2."
+	    echo "Use the following command to manually connect to the instance:"
+	    echo "ssh -i $KEY $ec2_ssh"
 
             return 0
         fi
@@ -246,7 +260,10 @@ ssh -i "$KEY" "$ec2_ssh"
 
 
     
-# Create and mount EBS volume on EC2 instance
+
+
+# Create and mount EBS volume on EC2 instance ==================================
+
 create_ebs() {
     local input=$1
     local ec2=$2
@@ -255,6 +272,7 @@ create_ebs() {
     local ssh=$5
 
     echo -e "Creating EBS volume..."
+
 
 
     # Get list of attached devices, need this to identify attached EBS volume
@@ -344,8 +362,8 @@ create_ebs() {
     then
         ssh -i "$KEY" "$ssh" bash <<EOF
             sudo parted "$dev_path" mklabel gpt > /dev/null 2>&1
-	    sudo parted -a opt "$dev_path" mkpart primary ext4 0% 100% > /dev/null 2>&1
-	    sudo mkfs.ext4 -F "$dev_path" > /dev/null 2>&1
+            sudo parted -a opt "$dev_path" mkpart primary ext4 0% 100% > /dev/null 2>&1
+            sudo mkfs.ext4 -F "$dev_path" > /dev/null 2>&1
 EOF
 
     fi
@@ -365,23 +383,24 @@ EOF
 
 
 
-# Transfer data to mounted EBS volume
+
+
+# Transfer data to mounted EBS volume ==========================================
+
 transfer_data() {
     local input="$1"
-    local vol="$2"
-    local ssh="$3"
-    local snap_name="$4"
+    local config="$2"
+    local vol="$3"
+    local ssh="$4"
+    local snap_name="$5"
 
     
     if "$CREATE_VOL"
     then
 	echo -e "\nTransferring data to EBS volume $vol..."
 
-        scp -i "$KEY" "$input/"*".fastq.gz" "$ssh:/mnt/EBS/DATA"
-        scp -i "$KEY" "$input/config.yaml" "$ssh:/mnt/EBS/DATA"
-
-	ssh -i "$KEY" "$ssh" \
-            gzip "/mnt/EBS/DATA/config.yaml"
+        scp -i "$KEY" "$input/"*.fastq.gz "$ssh:/mnt/EBS/DATA"
+        scp -i "$KEY" "$config" "$ssh:~/"
 
 	wait
 
@@ -401,19 +420,24 @@ transfer_data() {
 
         check_status completed_snap "$snap_id" 120
 
-	echo -e "\nEBS volume $vol has been saved to snapshot $snap_id, samples can be re-run using the following command:\n$0 -i $snap_id -o $OUTPUT -k $KEY"
+	sleep 60
+
+        echo -e "\nEBS volume $vol has been saved to snapshot $snap_id, samples"
+        echo -e "can be re-run using the following command:"
+	echo -e "\n$0 -i $snap_id -o $OUTPUT -k $KEY"
     fi
-    
-#    ssh -i "$KEY" "$ssh" \
-#        gunzip "/mnt/EBS/DATA/config.yaml.gz"
 }
 
 
 
-# Terminate EC2 instance, create snapshot to save data, delete EBS volume
+
+
+# Terminate EC2 instance, create snapshot to save data, delete EBS volume ======
+
 terminate_ec2() {
     local ec2="$1"
     local vol="$2"
+
 
 
     # Terminate EC2 instance
@@ -445,7 +469,10 @@ terminate_ec2() {
 
 
 
-# Main function
+
+
+# Main function ================================================================
+
 main() {
   
     # Set project name
@@ -508,6 +535,7 @@ main() {
         # Transfer data to EBS volume and create snapshot
         transfer_data \
             "$INPUT" \
+	    "$CONFIG" \
             "$vol_id" \
             "$ec2_ssh" \
             "$project_name"
