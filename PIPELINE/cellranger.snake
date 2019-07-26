@@ -83,7 +83,6 @@ rule create_adt_csv:
         "{results}/logs/antibody_csv.out"
     params:
         job_name = "adt_csv",
-        memory   = "select[mem>4] rusage[mem=4]",
         adt_ref  = ADT_REF,
         abs      = ANTIBODIES
     log:
@@ -119,7 +118,6 @@ rule create_lib_csv:
         "{results}/logs/{sample}_csv.out"
     params:
         job_name = "lib_csv",
-        memory   = "select[mem>4] rusage[mem=4]",
         fqs      = _get_fqs
     log:
         "{results}/logs/{sample}_csv.out"
@@ -188,14 +186,17 @@ rule cellranger_count:
         "{results}/logs/{sample}_count.out"
     params:
         job_name = "count",
-        memory   = "select[mem>4] rusage[mem=4]"
     log:
         "{results}/logs/{sample}_count.out"
+    threads:
+        JOB_THREADS
     shell:
         """
         job_id=$(echo {wildcards.sample} | cut -d "-" -f 1)
         lib_csv={RESULTS}/{wildcards.sample}.csv
         adt_csv={RESULTS}/antibody_barcodes.csv
+
+        cd {RESULTS}
 
         if [[ ADT_SAMPLES == "none" ]]
         then
@@ -215,8 +216,6 @@ rule cellranger_count:
                 --project="scRNA-seq" \
                 --transcriptome={GENOME}
         fi
-
-        mv -u $job_id {RESULTS}
 
         echo "done" \
             > {output}
@@ -240,7 +239,7 @@ rule cellranger_aggr:
     log:
         "{results}/logs/{group}_aggr.out"
     threads:
-        1
+        N_THREADS
     shell:
         """
         {CELLRANGER} aggr \

@@ -5,14 +5,19 @@ data_dir="/mnt/EBS/DATA"
 res_dir="/mnt/EBS/RESULTS"
 log_dir="$res_dir/logs"
 pipeline="$HOME/PIPELINE"
+threads=$(grep -c "^processor" /proc/cpuinfo)
+threads=$(expr "$threads" - 2)
 
 mkdir -p "$log_dir"
 
+
+
 "$snakemake" \
     --snakefile "$pipeline/Snakefile" \
+    --configfile "$HOME/config.yaml" \
+    --cores "$threads" \
     --latency-wait 60 \
     --rerun-incomplete \
-    --configfile "$HOME/config.yaml" \
     > "$log_dir/cellranger.out" \
     2>&1
 

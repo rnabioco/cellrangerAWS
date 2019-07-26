@@ -4,17 +4,18 @@ set -o nounset -o pipefail -o errexit -x
 
 
 # Inputs
-AWS_USER="none"
 PROJECT="cellranger"
 INPUT="none"
 CONFIG="none"
 S3="none"
 KEY="none"
 TRANSFER_DATA=true
+USE_SNAP=false
 
 #EC2_TYPE="c5.12xlarge"
-EC2_TYPE="t2.2xlarge"
-AMI="ami-0a5271f1933bebca3"
+#EC2_TYPE="t2.2xlarge"
+EC2_TYPE="c5.12xlarge"
+AMI="ami-06f3276cab06d4b5f"
 MANUAL_MODE=false
 
 ZONE="us-west-2a"
@@ -35,7 +36,6 @@ OPTIONS
 -i, path to local directory or S3 bucket containing fastq files.
 -c, path to config.yaml ...OR S3 BUCKET.
 -s, name of S3 bucket.
--n, AWS user name.
 
 -k, path to AWS private key.
 -t, EC2 instance type (default is "$EC2_TYPE").
@@ -50,7 +50,7 @@ OPTIONS
 
 # Parse arguments =============================================================
 
-while getopts ":hi:c:s:n:k:t:p:a:m" args
+while getopts ":hi:c:s:k:t:p:a:m" args
 do
     case "$args" in
         h)
@@ -60,10 +60,15 @@ do
         i) 
             INPUT="$OPTARG"
 
-	    if [[ "$INPUT" =~ ^s3://.+ ]]
+            if [[ "$INPUT" =~ ^s3://.+ ]]
             then
                 TRANSFER_DATA=false
-		S3="$INPUT"
+                S3="$INPUT"
+
+            elif [[ "$INPUT" =~ ^snap\-[[:alnum:]]$ ]]
+            then
+                TRANSFER_DATA=false
+		USE_SNAP=true
             fi
             ;;
         c)
@@ -71,9 +76,6 @@ do
             ;;
         s)
             S3="$OPTARG"
-            ;;
-        n)
-            AWS_USER="$OPTARG"
             ;;
         k)
             KEY="$OPTARG"
@@ -103,7 +105,7 @@ do
     esac
 done
 
-if [[ "$INPUT" == "none" || "$CONFIG" == "none" || "$KEY" == "none" || "$AWS_USER" == "none" || "$S3" == "none" ]]
+if [[ "$INPUT" == "none" || "$CONFIG" == "none" || "$KEY" == "none" || "$S3" == "none" ]]
 then
     echo -e "\nERROR: Arguments are required for -i, -c, -o, and -k."
 
@@ -287,9 +289,10 @@ get_dns() {
 # Create and mount EBS volume on EC2 instance ==================================
 
 create_ebs() {
-    local input=$1
-    local ec2=$2
-    local zone=$3
+    local input="$1"
+    local ec2="$2"
+    local zone="$3"
+    local s3="$4"
 
     echo -e "Creating EBS volume..."
 
@@ -297,14 +300,14 @@ create_ebs() {
 
     # Get total file size
     local data_size=$(
-        aws s3 ls s3://rbifellows/ --summarize --human-readable \
+        aws s3 ls "$s3" --summarize --human-readable \
             | grep "Total Size" \
-            | grep -E -o "[0-9]+.+$"
+            | grep -E -o "[0-9].+$"
     )
 
     local vol_size=$(
         echo "$data_size" \
-            | grep -E "^[0-9]"
+            | grep -E -o "^[0-9]+"
     )
 
     local vol_size=$(expr "$vol_size" \* 2)
@@ -338,13 +341,24 @@ create_ebs() {
 
 
     # Create EBS volume
-    vol_id=$(
-        aws ec2 create-volume \
-            --size "$vol_size" \
-            --availability-zone "$zone" \
-            | grep -E -o "vol\-[[:alnum:]]+"
-    )
+    if "$USE_SNAP"
+    then
+        vol_id=$(
+            aws ec2 create-volume \
+                --snapshot-id "$INPUT" \
+                --availability-zone "$zone" \
+                | grep -E -o "vol\-[[:alnum:]]+"
+        )
 
+    else
+        vol_id=$(
+            aws ec2 create-volume \
+                --size "$vol_size" \
+                --availability-zone "$zone" \
+                | grep -E -o "vol\-[[:alnum:]]+"
+        )
+    fi
+        
     available_vol() {
         aws ec2 describe-volumes \
             --volume-ids "$1" \
@@ -407,59 +421,42 @@ EOF
 
 
 
-# Create access keys, transfer data from S3 bucket to EBS volume ===============
+# Transfer data from S3 bucket to EBS volume ==================================
 
 transfer_to_ec2() {
-    local aws_user="$1"
-    local s3="$2"
+    local s3="$1"
+    local vol="$2"
 
 
 
-    # Install and configure AWS on EC2 instance
-    local user_info=$(
-        aws iam create-access-key \
-            --user-name "$aws_user"
+    # Configure AWS on EC2 instance
+    local iam_id=$(
+        cat "$HOME/.aws/credentials" \
+            | grep -A 2 "default" \
+            | grep "aws_access_key_id" \
+	    | grep -E -o "[[:alnum:]]+$"
     )
 
     local iam_key=$(
-        echo "$user_info" \
-            | grep "SecretAccessKey" \
-	    | cut -d ":" -f 2 \
-	    | sed 's/[\",]//g'
+        cat "$HOME/.aws/credentials" \
+            | grep -A 2 "default" \
+            | grep "aws_secret_access_key" \
+            | grep -E -o "[[:alnum:]/]+$"
     )
 
-    iam_id=$(
-        echo "$user_info" \
-            | grep "AccessKeyId" \
-            | cut -d ":" -f 2 \
-            | sed 's/[\". ]//g'
-    )
-
-
-
-    aws_cmds="#! /bin/bash\naws configure set aws_secret_access_key $iam_key\naws configure set aws_access_key_id $iam_id\n"
+    local aws="/home/$EC2_USER/.local/bin/aws"
 
     ssh -i "$KEY" "$EC2_SSH" \
-        echo $aws_cmds > ~/run_aws.sh
+        "$aws" configure set aws_access_key_id "$iam_id"
 
     ssh -i "$KEY" "$EC2_SSH" \
-        bash ~/run_aws.sh
-
-
-    #ssh -i "$KEY" "$EC2_SSH" \
-    #    aws configure set aws_secret_access_key "$iam_key"
-
-    #ssh -i "$KEY" "$EC2_SSH" \
-    #    aws configure set aws_access_key_id "$iam_id"
-
-#    ssh -i "$KEY" "$EC2_SSH" bash <<EOF
-#        aws configure set aws_secret_access_key "$secret_key"
-#        aws configure set aws_access_key_id "$key_id"
-#EOF
+        "$aws" configure set aws_secret_access_key "$iam_key"
 
 
 
-    # Transfer fastqs to EBS volume
+    # Transfer files to EBS volume
+    scp -i "$KEY" "$CONFIG" "$EC2_SSH:~/"
+
     local s3_fqs=$(
         aws s3 ls "$s3" \
             | grep -E -o "[[:alnum:]_\-\.]+.fastq.gz"
@@ -469,10 +466,28 @@ transfer_to_ec2() {
     for fq in $s3_fqs
     do 
         ssh -i "$KEY" "$EC2_SSH" \
-            aws s3 cp "$s3/$fq" /mnt/EBS/DATA
+            "$aws" s3 cp "$s3/$fq" /mnt/EBS/DATA
     done
 
     wait
+
+
+
+    # Create snapshot of EBS volume
+    snap_id=$(
+        aws ec2 create-snapshot \
+            --description "$snap_name" \
+            --volume-id "$vol" \
+            | grep -E -o "snap\-[[:alnum:]]+"
+    )
+
+    completed_snap() {
+        aws ec2 describe-snapshots \
+            --snapshot-ids "$1" \
+            --filters Name=status,Values=completed
+    }
+
+    check_status completed_snap "$snap_id" 120
 }
 
 
@@ -484,7 +499,6 @@ transfer_to_ec2() {
 terminate_ec2() {
     local ec2="$1"
     local vol="$2"
-    local id="$3"
 
 
 
@@ -513,12 +527,6 @@ terminate_ec2() {
         > /dev/null
 
     echo -e "\nEC2 instance $ec2_id has been terminated and EBS volume $vol_id has been deleted."
-
-
-
-    # Delete access keys
-    aws iam delete-access-key \
-        --access-key-id $id
 }
 
 
@@ -563,14 +571,14 @@ main() {
     create_ebs \
         "$INPUT" \
         "$ec2_id" \
-        "$ZONE"
+        "$ZONE" \
+        "$S3"
 
 
 
     # Transfer data from S3 bucket to EC2 instance
     transfer_to_ec2 \
-        "$AWS_USER" \
-        "$ec2_id"
+        "$S3"
 
     if "$MANUAL_MODE"
     then
@@ -580,6 +588,8 @@ main() {
 
 
     # Run cellranger and transfer results to S3 bucket
+    aws="/home/$EC2_USER/.local/bin/aws"
+
     echo -e "\nBeginning Cell Ranger run..."
 
     ssh -i "$KEY" "$EC2_SSH" \
@@ -588,18 +598,14 @@ main() {
     echo -e "\nCell Ranger run has completed, transferring results to S3 bucket $S3."
     
     ssh -i "$KEY" "$EC2_SSH" \
-        aws s3 cp /mnt/EBS/RESULTS "$S3" --recursive
+        "$aws" s3 cp /mnt/EBS/RESULTS "$S3" --recursive
 
 
 
     # Terminate EC2 instance and delete access keys
-    if [[ "$EC2_ID" == "none" ]]
-    then
-        terminate_ec2 \
-            "$ec2_id" \
-            "$vol_id" \
-	    "$iam_id"
-    fi
+    terminate_ec2 \
+        "$ec2_id" \
+        "$vol_id"
 }
 
 

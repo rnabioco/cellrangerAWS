@@ -2,6 +2,7 @@ shell.executable("/bin/bash")
 
 import os 
 import glob
+import multiprocessing
 
 
 # Inputs from config.yaml
@@ -31,6 +32,13 @@ if ADT_SAMPLES is not None:
 
 else:
     ADT_SAMPLES = "none"
+
+
+
+# Set thread count
+N_SAMPLES   = len(RNA_SAMPLES)
+N_THREADS   = multiprocessing.cpu_count() - 2
+JOB_THREADS = int(N_THREADS / N_SAMPLES)
 
 
 
