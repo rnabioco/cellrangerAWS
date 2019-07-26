@@ -4,17 +4,17 @@ set -x -o nounset -o pipefail -o errexit
 
 
 # Inputs
+AWS_USER="none"
 PROJECT="cellranger"
 INPUT="none"
 CONFIG="none"
-OUTPUT="none"
+S3="none"
 KEY="none"
+TRANSFER_DATA=true
 
-EC2_ID="none"
+#EC2_TYPE="c5.12xlarge"
 EC2_TYPE="t2.2xlarge"
 AMI="ami-0a5271f1933bebca3"
-CREATE_VOL=true
-VOLUME_SIZE=50
 MANUAL_MODE=false
 
 ZONE="us-west-2a"
@@ -31,17 +31,16 @@ USAGE
 
 OPTIONS
 -h, display this message.
--i, path to input directory containing fastq files and config.yaml or ID for snapshot containing data.
--c, path to config.yaml.
--o, path to output directory.
--k, path to AWS private key.
--p, project name, this is used to name saved snapshots (default is \"cellranger\").
--t, EC2 instance type (default is "$EC2_TYPE").
--s, size of EBS volume in GiB, by default this is set based on the size of the fastqs present in the input directory.
--e, ID for EC2 instance configured to run cellranger, by default a new instance is created.
--a, ID for machine image configured to run cellranger (default is "$AMI").
--m, run in manual mode, this launches an EC2 instance, mounts an EBS volume and exits.
 
+-i, path to local directory or S3 bucket containing fastq files.
+-c, path to config.yaml ...OR S3 BUCKET.
+-s, name of S3 bucket.
+-n, AWS user name.
+
+-k, path to AWS private key.
+-t, EC2 instance type (default is "$EC2_TYPE").
+-a, ID for machine image configured to run cellranger (default is "$AMI").
+-m, run in manual mode, this transfers data to an EC2 instance and exits.
     """
 }
 
@@ -51,41 +50,39 @@ OPTIONS
 
 # Parse arguments =============================================================
 
-while getopts ":hi:c:o:k:p:t:s:e:a:m" args
+while getopts ":hi:c:s:n:k:t:p:a:m" args
 do
     case "$args" in
-        help)
+        h)
             usage
             exit 0
             ;;
         i) 
             INPUT="$OPTARG"
 
-	    if [[ "$INPUT" =~ ^snap\-[[:alnum:]]+$ ]]
+	    if [[ "$INPUT" =~ ^s3://.+ ]]
             then
-                CREATE_VOL=false
+                TRANSFER_DATA=false
+		S3="$INPUT"
             fi
             ;;
         c)
             CONFIG="$OPTARG"
             ;;
-        o)
-            OUTPUT="$OPTARG"
+        s)
+            S3="$OPTARG"
+            ;;
+        n)
+            AWS_USER="$OPTARG"
             ;;
         k)
             KEY="$OPTARG"
             ;;
-        p)
-            PROJECT="$OPTARG"
-            ;;
         t)
             EC2_TYPE="$OPTARG"
             ;;
-        s)
-            VOLUME_SIZE="$OPTARG"
-            ;;
-        e)
-            EC2_ID="$OPTARG"
+        p)
+            PROJECT="$OPTARG"
             ;;
         a)
             AMI="$OPTARG"
@@ -106,7 +103,7 @@ do
     esac
 done
 
-if [[ "$INPUT" == "none" || "$CONFIG" == "none" || "$OUTPUT" == "none" || "$KEY" == "none" ]]
+if [[ "$INPUT" == "none" || "$CONFIG" == "none" || "$KEY" == "none" || "$AWS_USER" == "none" || "$S3" == "none" ]]
 then
     echo -e "\nERROR: Arguments are required for -i, -c, -o, and -k."
 
@@ -151,6 +148,30 @@ check_status() {
 
 
 
+# Transfer data to S3 bucket ===================================================
+
+transfer_to_s3() {
+    local input="$1"
+    local s3="$2"
+
+    if ! aws s3 ls "$s3" > /dev/null
+    then
+        bucket_name=$(echo "$s3" | sed 's/s3:\/\///g')
+
+        aws s3api create-bucket \
+            --bucket "$bucket_name"
+    fi
+
+    for fq in "$input"*.fastq.gz
+    do
+        aws s3 cp "$fq" "$s3"
+    done
+}
+
+
+
+
+
 # Launch EC2 instance ==========================================================
 # When using default VPC the instance does not have internet access. To resolve
 # this create new VPC, security group, subnet, and internet gateway. Activate
@@ -166,6 +187,7 @@ launch_ec2() {
     local key_name=$(basename -s .pem "$KEY")
 
     echo -e "\nLaunching EC2 $EC2_TYPE instance..."
+
 
 
     # Launch EC2 instance
@@ -237,11 +259,11 @@ get_dns() {
                     | head -n 1
             )
 
-            ec2_ssh="$EC2_USER@$dns"
+            EC2_SSH="$EC2_USER@$dns"
 
             echo -e "\nConnection has been established with EC2 instance $ec2."
 	    echo "Use the following command to manually connect to the instance:"
-	    echo "ssh -i $KEY $ec2_ssh"
+	    echo "ssh -i $KEY $EC2_SSH"
 
             return 0
         fi
@@ -259,7 +281,7 @@ get_dns() {
 }
 
 
-    
+
 
 
 # Create and mount EBS volume on EC2 instance ==================================
@@ -267,17 +289,41 @@ get_dns() {
 create_ebs() {
     local input=$1
     local ec2=$2
-    local vol_size=$3
-    local zone=$4
-    local ssh=$5
+    local zone=$3
 
     echo -e "Creating EBS volume..."
 
 
 
+    # Get total file size
+    local data_size=$(
+        aws s3 ls s3://rbifellows/ --summarize --human-readable \
+            | grep "Total Size" \
+            | grep -E -o "[0-9]+.+$"
+    )
+
+    local vol_size=$(
+        echo "$data_size" \
+            | grep -E "^[0-9]"
+    )
+
+    local vol_size=$(expr "$vol_size" \* 2)
+
+    if ! echo "$data_size" | grep -E "GiB|TiB" --quiet
+    then
+        local vol_size=10
+    fi
+
+    if [[ "$vol_size" < 10 ]]
+    then
+        local vol_size=10
+    fi
+
+
+
     # Get list of attached devices, need this to identify attached EBS volume
     local old_devs=$(
-        ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ssh" \
+        ssh -o "StrictHostKeyChecking no" -i "$KEY" "$EC2_SSH" \
             sudo fdisk -l \
                 | grep -E -o "/dev/[[:alnum:]]+" \
                 2>&1
@@ -292,27 +338,12 @@ create_ebs() {
 
 
     # Create EBS volume
-    if "$CREATE_VOL"
-    then
-        vol_id=$(
-            aws ec2 create-volume \
-                --size "$vol_size" \
-                --availability-zone "$zone" \
-                | grep -E -o "vol\-[[:alnum:]]+"
-        )
-
-        local vol_msg="\nEBS volume $vol_id ($vol_size GiB) was created and mounted to EC2 instance $ec2."
-
-    else
-        vol_id=$(
-            aws ec2 create-volume \
-                --snapshot-id "$INPUT" \
-                --availability-zone "$zone" \
-	        | grep -E -o "vol\-[[:alnum:]]+"
-        )
-
-        local vol_msg="\nEBS volume $vol_id was created from snapshot $INPUT and mounted to EC2 instance $ec2."
-    fi
+    vol_id=$(
+        aws ec2 create-volume \
+            --size "$vol_size" \
+            --availability-zone "$zone" \
+            | grep -E -o "vol\-[[:alnum:]]+"
+    )
 
     available_vol() {
         aws ec2 describe-volumes \
@@ -343,9 +374,9 @@ create_ebs() {
 
     # Identify device path for EBS volume
     local new_devs=$(
-        ssh -i "$KEY" "$ssh" \
+        ssh -i "$KEY" "$EC2_SSH" \
             sudo fdisk -l \
-                | grep -E "^Disk .+$vol_size GiB" \
+                | grep -E "^Disk .+$vol_size GB" \
                 | grep -E -o "/dev/[[:alnum:]]+" \
                 2>&1
     )
@@ -357,82 +388,86 @@ create_ebs() {
 
 
 
-    # Format new EBS volume
-    if "$CREATE_VOL"
-    then
-        ssh -i "$KEY" "$ssh" bash <<EOF
-            sudo parted "$dev_path" mklabel gpt > /dev/null 2>&1
-            sudo parted -a opt "$dev_path" mkpart primary ext4 0% 100% > /dev/null 2>&1
-            sudo mkfs.ext4 -F "$dev_path" > /dev/null 2>&1
-EOF
+    # Format and mount EBS volume
+    ssh -i "$KEY" "$EC2_SSH" bash <<EOF
+        sudo parted "$dev_path" mklabel gpt > /dev/null 2>&1
+        sudo parted -a opt "$dev_path" mkpart primary ext4 0% 100% > /dev/null 2>&1
+        sudo mkfs.ext4 -F "$dev_path" > /dev/null 2>&1
 
-    fi
-
-
-
-    # Mount EBS volume
-    ssh -i "$KEY" "$ssh" bash <<EOF
         sudo mkdir -p /mnt/EBS
         sudo mount "$dev_path" /mnt/EBS
         sudo mkdir -p /mnt/EBS/DATA
         sudo chmod -R 777 /mnt/EBS
 EOF
 
-    echo -e "$vol_msg"
+    echo -e "\nEBS volume $vol_id ($vol_size GB) was created and mounted to EC2 instance $ec2."
 }
 
 
 
 
 
-# Transfer data to mounted EBS volume ==========================================
+# Transfer data from S3 to EBS volume ==========================================
 
-transfer_data() {
-    local input="$1"
-    local config="$2"
-    local vol="$3"
-    local ssh="$4"
-    local snap_name="$5"
+transfer_to_ec2() {
+    local aws_user="$1"
+    local s3="$2"
 
-    
-    if "$CREATE_VOL"
-    then
-	echo -e "\nTransferring data to EBS volume $vol..."
 
-        scp -i "$KEY" "$input/"*.fastq.gz "$ssh:/mnt/EBS/DATA"
-        scp -i "$KEY" "$config" "$ssh:~/"
 
-	wait
+    # Install and configure AWS on EC2 instance
+    local user_info=$(
+        aws iam create-access-key \
+            --user-name "$aws_user"
+    )
 
-        # Save snapshot of EBS volume
-        local snap_id=$(
-            aws ec2 create-snapshot \
-                --description "$snap_name" \
-                --volume-id "$vol" \
-	        | grep -E -o "snap\-[[:alnum:]]+"
-    	)
+    local secret_key=$(
+        echo "$user_info" \
+            | grep "SecretAccessKey" \
+	    | cut -d ":" -f 2 \
+	    | sed 's/[\",]//g'
+    )
 
-        completed_snap() {
-            aws ec2 describe-snapshots \
-                --snapshot-ids "$1" \
-                --filters Name=status,Values=completed
-        }
+    local key_id=$(
+        echo "$user_info" \
+            | grep "AccessKeyId" \
+            | cut -d ":" -f 2 \
+            | sed 's/[\".]//g'
+    )
 
-        check_status completed_snap "$snap_id" 120
+    ssh -i "$KEY" "$EC2_SSH" \
+        pip3 install awscli --upgrade
 
-	sleep 60
+    wait
 
-        echo -e "\nEBS volume $vol has been saved to snapshot $snap_id, samples"
-        echo -e "can be re-run using the following command:"
-	echo -e "\n$0 -i $snap_id -o $OUTPUT -k $KEY"
-    fi
+    ssh -i "$KEY" "$EC2_SSH" bash <<EOF
+        aws configure set aws_secret_access_key "$secret_key"
+        aws configure set aws_access_key_id "$key_id"
+EOF
+
+
+
+    # Transfer fastqs to EBS volume
+    local s3_fqs=$(
+        aws s3 ls "$s3" \
+            | grep -E -o "[[:alnum:]_\-\.]+.fastq.gz"
+    )
+
+    # Leave s3_fqs unquoted
+    for fq in $s3_fqs
+    do 
+        ssh -i "$KEY" "$EC2_SSH" \
+            aws s3 cp "$s3/$fq" /mnt/EBS/DATA
+    done
+
+    wait
 }
 
 
 
 
 
-# Terminate EC2 instance, create snapshot to save data, delete EBS volume ======
+# Terminate EC2 instance and delete EBS volume ======
 
 terminate_ec2() {
     local ec2="$1"
@@ -480,66 +515,43 @@ main() {
 
 
 
-    # Calculate EBS volume size
-    volume_size="$VOLUME_SIZE"
-
-    if "$CREATE_VOL"
+    # Transfer data to S3 bucket
+    if "$TRANSFER_DATA"
     then
-        data_size=$(
-            du -shc -BG "$INPUT" \
-                | grep "total" \
-                | grep -E -o "[0-9]+"
-        )
-
-        volume_size=$(expr "$data_size" \* 2)
-
-        if [[ "$VOLUME_SIZE" > "$volume_size" ]]
-        then
-            volume_size="$VOLUME_SIZE"
-        fi
+        transfer_to_s3 \
+            "$INPUT" \
+            "$S3"
     fi
 
 
 
     # Launch EC2 instance and retrieve ec2_id
-    ec2_id="$EC2_ID"
-
-    if [[ "$EC2_ID" == "none" ]]
-    then
-        launch_ec2 \
-            "$AMI" \
-            "$EC2_TYPE" \
-            "$ZONE" \
-            "$SECURITY_GROUP" \
-            "$SUBNET"
-    fi
+    launch_ec2 \
+        "$AMI" \
+        "$EC2_TYPE" \
+        "$ZONE" \
+        "$SECURITY_GROUP" \
+        "$SUBNET"
 
 
 
-    # Check EC2 instance connectivity and retrieve ec2_ssh
+    # Check EC2 instance connectivity and retrieve EC2_SSH
     get_dns "$ec2_id"
 
 
 
-    # Create EBS volume, transfer data, and create snapshot
-    if [[ "$EC2_ID" == "none" ]]
-    then
-        # Create EBS volume and retrieve vol_id
-        create_ebs \
-            "$INPUT" \
-            "$ec2_id" \
-            "$volume_size" \
-            "$ZONE" \
-            "$ec2_ssh"
+    # Create EBS volume and retrieve vol_id
+    create_ebs \
+        "$INPUT" \
+        "$ec2_id" \
+        "$ZONE"
 
-        # Transfer data to EBS volume and create snapshot
-        transfer_data \
-            "$INPUT" \
-	    "$CONFIG" \
-            "$vol_id" \
-            "$ec2_ssh" \
-            "$project_name"
-    fi
+
+
+    # Transfer data from S3 bucket to EC2 instance
+    transfer_to_ec2 \
+        "$AWS_USER" \
+        "$ec2_id"
 
     if "$MANUAL_MODE"
     then
@@ -548,16 +560,16 @@ main() {
 
 
 
-    # Run cellranger and transfer results
+    # Run cellranger and transfer results to S3 bucket
     echo -e "\nBeginning Cell Ranger run..."
 
-    ssh -i "$KEY" "$ec2_ssh" \
+    ssh -i "$KEY" "$EC2_SSH" \
         bash "/home/$EC2_USER/PIPELINE/snakecharmer.sh"
 
-    echo -e "\nCell Ranger run has completed, transferring results to $OUTPUT."
-
-    rsync -r -e "ssh -i $KEY" --exclude possorted_genome_bam.bam* \
-        "$ec2_ssh:/mnt/EBS/RESULTS/"* "$OUTPUT"
+    echo -e "\nCell Ranger run has completed, transferring results to S3 bucket $S3."
+    
+    ssh -i "$KEY" "$EC2_SSH" \
+        aws s3 cp /mnt/EBS/RESULTS "$S3" --recursive
 
 
 
