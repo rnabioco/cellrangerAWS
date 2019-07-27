@@ -1,6 +1,6 @@
 #! /bin/bash
 
-set -o nounset -o pipefail -o errexit -x
+set -o nounset -o pipefail -o errexit
 
 
 # Inputs
@@ -8,15 +8,16 @@ INPUT="none"
 CONFIG="none"
 S3="none"
 KEY="none"
-CLEAN_UP=false
 PROJECT="cellranger"
-TRANSFER_DATA=true
-CHILD_LOCK=true
+FORCE_CLEAN=true
 
+
+# Defaults
+MANUAL_MODE=false
+CLEAN_UP=false
+TRANSFER_DATA=true
 EC2_TYPE="c5.12xlarge"
 AMI="ami-06f3276cab06d4b5f"
-MANUAL_MODE=false
-
 ZONE="us-west-2a"
 SECURITY_GROUP="sg-00cf9318d9719735d"
 SUBNET="subnet-083a3a855e543ee1c"
@@ -30,13 +31,12 @@ USAGE
 "$0" [OPTIONS]
 
 OPTIONS
--h, display this message.
-
 -i, path to local directory or S3 bucket containing fastq files.
 -c, path to config.yaml ...OR S3 BUCKET.
--s, name of S3 bucket.
-
 -k, path to AWS private key.
+
+-h, display this message.
+-s, name of an S3 bucket to transfer data to, if the bucket does not exist a new one will be created.
 -t, EC2 instance type (default is "$EC2_TYPE").
 -a, ID for machine image configured to run cellranger (default is "$AMI").
 -f, terminate running instances/volumes and start new job.
@@ -101,31 +101,60 @@ fi
 
 # Check instance/volume status =================================================
 
+get_time() {
+    echo "["$(date "+%F %T")"]"
+}
+
 check_status() {
     local input_fun="$1"
     local id="$2"
-    local num=60
+    local num=15
+    local id_regex=$(echo $2 | sed 's/ /\|/g')
 
     if [[ "$#" == 3 ]]
     then
         local num="$3"
     fi
 
-    echo -e "\nChecking for $input_fun $id..."
+    echo -e "\n$(get_time) Checking for $input_fun "$id"..."
 
     for i in $(seq 1 "$num")
-    do
-        if "$input_fun" "$id" | grep --quiet "$id"
+    do   
+        sleep 20
+
+        if "$input_fun" "$id" | grep -E --quiet "$id_regex"
         then
             return 0
         fi
-
-        sleep 10
     done
 
-    echo -e "\nERROR: Timed out waiting for $input_fun $id."
+    echo -e "\n$(get_time) ERROR: Timed out waiting for $input_fun "$id"."
 
     exit 1
+}
+
+running_ec2() {
+    aws ec2 describe-instances \
+        --instance-ids $1 \
+        --filters Name=instance-state-name,Values=running
+}
+
+available_vol() {
+    aws ec2 describe-volumes \
+        --volume-ids $1 \
+        --filters Name=status,Values=available
+}
+
+attached_vol() {
+    aws ec2 describe-volumes \
+        --volume-ids $1 \
+        --filters Name=attachment.status,Values=attached
+}
+
+terminated_ec2() {
+    aws ec2 describe-instances \
+        --instance-ids $1 \
+        --filters Name=instance-state-name,Values=terminated
 }
 
 
@@ -147,7 +176,7 @@ check_for_undead() {
     if [[ "$running_ec2s" =~ "InstanceId" ]]
     then
         local ec2_ids=$(
-            echo $running_ec2s \
+            echo "$running_ec2s" \
 	        | grep "InstanceId" \
                 | grep -E -o "i\-[[:alnum:]]+"
         )
@@ -157,8 +186,7 @@ check_for_undead() {
             clean_up "$ec2_ids"
 	
 	else
-            echo -e "\nERROR: An EC2 instance from a previous job is still running, to "
-	    echo "terminate this instance and start a new job, include the -f option."
+            echo -e "\n$(get_time) ERROR: An EC2 instance from a previous job is still running, to terminate this instance and start a new job, include the -f option."
 
 	    local kill_job=true
         fi
@@ -166,16 +194,16 @@ check_for_undead() {
     
 
 
-    # Delete available EBS volumes from previous jobs
+    # Delete EBS volumes from previous jobs
     available_vols=$(
         aws ec2 describe-volumes \
-            --filters Name=status,Values=available \
+            --filters Name=status,Values=available,in-use \
     )
 
     if [[ "$available_vols" =~ "VolumeId" ]]
     then
         local vol_ids=$(
-	    echo $available_vols \
+	    echo "$available_vols" \
                 | grep "VolumeId" \
                 | grep -E -o "vol\-[[:alnum:]]+"
 	)
@@ -185,8 +213,7 @@ check_for_undead() {
             clean_up "$vol_ids"
         
         else
-            echo -e "\nERROR: An EBS volume from a previous job is still available, "
-	    echo "to delete this volume and start a new job, include the -f option."
+            echo -e "\n$(get_time) ERROR: An EBS volume from a previous job is still available, to delete this volume and start a new job, include the -f option."
 
 	    local kill_job=true
         fi
@@ -210,7 +237,11 @@ transfer_to_s3() {
 
     if ! aws s3 ls "$s3" > /dev/null
     then
-        bucket_name=$(echo "$s3" | sed 's/s3:\/\///g')
+        bucket_name=$(
+            echo "$s3" \
+                | grep -E -o "s3://[[:alnum:]\-]+" \
+                | sed 's/s3:\/\///g'
+        )
 
         aws s3api create-bucket \
             --bucket "$bucket_name"
@@ -240,7 +271,7 @@ launch_ec2() {
     local subnet="$5"
     local key_name=$(basename -s .pem "$KEY")
 
-    echo -e "\nLaunching EC2 $EC2_TYPE instance..."
+    echo -e "\n$(get_time) Launching EC2 $EC2_TYPE instance..."
 
 
 
@@ -260,15 +291,9 @@ launch_ec2() {
             | grep -E -o "i\-[[:alnum:]]+"
     )
 
-    running_ec2() {
-        aws ec2 describe-instances \
-            --instance-id "$1" \
-            --filters Name=instance-state-name,Values=running
-    }
-
     check_status running_ec2 "$ec2_id"
 
-    echo -e "\nEC2 instance $ec2_id has been successfully launched."
+    echo -e "\n$(get_time) EC2 instance $ec2_id has been successfully launched."
 }
 
 
@@ -280,7 +305,7 @@ launch_ec2() {
 get_dns() {
     local ec2="$1"
 
-    echo -e "\nAttempting to make contact with EC2 instance $ec2..."
+    echo -e "\n$(get_time) Attempting to make contact with EC2 instance $ec2..."
 
 
 
@@ -315,8 +340,7 @@ get_dns() {
 
             EC2_SSH="$EC2_USER@$dns"
 
-            echo -e "\nConnection has been established with EC2 instance $ec2."
-	    echo "Use the following command to manually connect to the instance:"
+            echo -e "\n$(get_time) Connection has been established with EC2 instance $ec2, use the following command to manually connect:"
 	    echo "ssh -i $KEY $EC2_SSH"
 
             return 0
@@ -326,10 +350,9 @@ get_dns() {
 
 
     # If IP does not respond to ping, terminate instance
-    aws ec2 terminate-instances \
-        --instance-ids "$ec2"
+    echo -e "\n$(get_time) ERROR: Unable to contact EC2 instance $ec2."
 
-    echo -e "ERROR: Unable to connect, terminating EC2 instance $ec2..."
+    clean_up "$ec2"
 
     exit 1
 }
@@ -339,6 +362,9 @@ get_dns() {
 
 
 # Create and mount EBS volume on EC2 instance ==================================
+# Since snapshots are no longer being saved, it might be better to adjust the
+# size of the root volume when launching the instance instead of attaching an
+# additional volume
 
 create_ebs() {
     local input="$1"
@@ -346,7 +372,7 @@ create_ebs() {
     local zone="$3"
     local s3="$4"
 
-    echo -e "Creating EBS volume..."
+    echo -e "\n$(get_time) Creating EBS volume..."
 
 
 
@@ -400,12 +426,6 @@ create_ebs() {
             | grep -E -o "vol\-[[:alnum:]]+"
     )
         
-    available_vol() {
-        aws ec2 describe-volumes \
-            --volume-ids "$1" \
-            --filters Name=status,Values=available
-    }
-
     check_status available_vol "$vol_id"
 
 
@@ -416,12 +436,6 @@ create_ebs() {
         --volume-id "$vol_id" \
         --device /dev/sdh \
         > /dev/null
-
-    attached_vol() {
-        aws ec2 describe-volumes \
-            --volume-ids "$1" \
-            --filters Name=attachment.status,Values=attached
-    }
 
     check_status attached_vol "$vol_id"
 
@@ -455,7 +469,7 @@ create_ebs() {
         sudo chmod -R 777 /mnt/EBS
 EOF
 
-    echo -e "\nEBS volume $vol_id ($vol_size GB) was created and mounted to EC2 instance $ec2."
+    echo -e "\n$(get_time) EBS volume $vol_id ($vol_size GB) was created and mounted to EC2 instance $ec2."
 }
 
 
@@ -467,7 +481,6 @@ EOF
 transfer_to_ec2() {
     local s3="$1"
     local vol="$2"
-    local snap_name="$3"
 
 
 
@@ -520,48 +533,70 @@ transfer_to_ec2() {
 
 
 
+# Run Cell Ranger ==============================================================
+
+run_cellranger() {
+    local s3="$1"
+
+    aws="/home/$EC2_USER/.local/bin/aws"
+
+    echo -e "\n$(get_time) Beginning Cell Ranger run..."
+
+    ssh -i "$KEY" "$EC2_SSH" \
+        bash "/home/$EC2_USER/PIPELINE/snakecharmer.sh"
+
+    echo -e "\n$(get_time) Cell Ranger run has completed, transferring results to S3 bucket $s3."
+    
+    ssh -i "$KEY" "$EC2_SSH" \
+        "$aws" s3 cp /mnt/EBS/RESULTS "$s3" --recursive
+}
+
+
+
+
+
 # Terminate EC2 instance and delete EBS volume =================================
 
 clean_up() {
 
 
     # Terminate EC2 instance
-    if [[ "$1" =~ ^i\-[[:alnum:]]+$ ]]
+    if [[ "$1" =~ ^i\-[[:alnum:]]+ ]]
     then
         local ec2="$1"
 
-        echo -e "\nTerminating EC2 instance $ec2..."
+        echo -e "\n$(get_time) Terminating EC2 instance "$ec2"..."
 
         aws ec2 terminate-instances \
-            --instance-ids "$ec2" \
+            --instance-ids $ec2 \
             > /dev/null
-
-        terminated_ec2() {
-            aws ec2 describe-instances \
-                --instance-id "$1" \
-                --filters Name=instance-state-name,Values=terminated
-        }
 
         check_status terminated_ec2 "$ec2" 
 	
-        echo -e "\nEC2 instance $ec2_id has been terminated."   
+	# Keep this quoting pattern so multiple IDs are displayed on one line
+        echo -e "\n$(get_time) EC2 instance "$ec2" has been terminated."   
     fi
 
 
 
     # Delete EBS volume
-    if [[ "$1" =~ ^vol\-[[:alnum:]]+$ ]] || [[ "$#" == 2 ]]
+    if [[ "$1" =~ ^vol\-[[:alnum:]]+ ]] || [[ "$#" == 2 ]]
     then
         local vol="$1"
 
+	if [[ "$#" == 2 ]]
+        then
+            local vol="$2"
+        fi
+
         # Delete EBS volume
-        echo -e "\nDeleting EBS volume $vol..."
+        echo -e "\n$(get_time) Deleting EBS volume "$vol"..."
 
         aws ec2 delete-volume \
-            --volume-id "$vol" \
+            --volume-id $vol \
             > /dev/null
 
-	echo -e "\nEBS volume $vol_id has been deleted."
+	echo -e "\n$(get_time) EBS volume "$vol" has been deleted."
     fi
 }
 
@@ -573,8 +608,8 @@ clean_up() {
 
 main() {
   
-    # Check for old instances/volumes
-    if "$CHILD_LOCK"
+    # Terminate instances/volumes from previous runs
+    if "$FORCE_CLEAN"
     then
         check_for_undead
     fi
@@ -616,12 +651,9 @@ main() {
 
 
     # Transfer data from S3 bucket to EC2 instance
-    project_name="$PROJECT"_$(date +%Y%m%d-%H%M%S)
-
     transfer_to_ec2 \
         "$S3" \
-        "$vol_id" \
-        "$project_name"
+        "$vol_id"
 
     if "$MANUAL_MODE"
     then
@@ -630,22 +662,12 @@ main() {
 
 
 
-    # Run cellranger and transfer results to S3 bucket
-    aws="/home/$EC2_USER/.local/bin/aws"
-
-    echo -e "\nBeginning Cell Ranger run..."
-
-    ssh -i "$KEY" "$EC2_SSH" \
-        bash "/home/$EC2_USER/PIPELINE/snakecharmer.sh"
-
-    echo -e "\nCell Ranger run has completed, transferring results to S3 bucket $S3."
-    
-    ssh -i "$KEY" "$EC2_SSH" \
-        "$aws" s3 cp /mnt/EBS/RESULTS "$S3" --recursive
+    # Run Cell Ranger
+    run_cellranger "$S3"
 
 
 
-    # Terminate EC2 instance and delete access keys
+    # Terminate EC2 instance and delete EBS volumes
     clean_up \
         "$ec2_id" \
         "$vol_id"
