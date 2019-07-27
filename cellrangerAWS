@@ -4,16 +4,15 @@ set -o nounset -o pipefail -o errexit -x
 
 
 # Inputs
-PROJECT="cellranger"
 INPUT="none"
 CONFIG="none"
 S3="none"
 KEY="none"
+CLEAN_UP=false
+PROJECT="cellranger"
 TRANSFER_DATA=true
-USE_SNAP=false
+CHILD_LOCK=true
 
-#EC2_TYPE="c5.12xlarge"
-#EC2_TYPE="t2.2xlarge"
 EC2_TYPE="c5.12xlarge"
 AMI="ami-06f3276cab06d4b5f"
 MANUAL_MODE=false
@@ -40,6 +39,7 @@ OPTIONS
 -k, path to AWS private key.
 -t, EC2 instance type (default is "$EC2_TYPE").
 -a, ID for machine image configured to run cellranger (default is "$AMI").
+-f, terminate running instances/volumes and start new job.
 -m, run in manual mode, this transfers data to an EC2 instance and exits.
     """
 }
@@ -50,7 +50,7 @@ OPTIONS
 
 # Parse arguments =============================================================
 
-while getopts ":hi:c:s:k:t:p:a:m" args
+while getopts ":hi:c:s:k:t:p:a:fm" args
 do
     case "$args" in
         h)
@@ -64,34 +64,16 @@ do
             then
                 TRANSFER_DATA=false
                 S3="$INPUT"
-
-            elif [[ "$INPUT" =~ ^snap\-[[:alnum:]]$ ]]
-            then
-                TRANSFER_DATA=false
-		USE_SNAP=true
             fi
             ;;
-        c)
-            CONFIG="$OPTARG"
-            ;;
-        s)
-            S3="$OPTARG"
-            ;;
-        k)
-            KEY="$OPTARG"
-            ;;
-        t)
-            EC2_TYPE="$OPTARG"
-            ;;
-        p)
-            PROJECT="$OPTARG"
-            ;;
-        a)
-            AMI="$OPTARG"
-            ;;
-        m)
-            MANUAL_MODE=true
-            ;;
+        c) CONFIG="$OPTARG" ;;
+        s) S3="$OPTARG" ;;
+        k) KEY="$OPTARG" ;;
+        t) EC2_TYPE="$OPTARG" ;;
+        p) PROJECT="$OPTARG" ;;
+        a) AMI="$OPTARG" ;;
+        f) CLEAN_UP=true ;;
+        m) MANUAL_MODE=true ;;
         :)
             echo -e "\nERROR: -$OPTARG requires an argument"
 
@@ -105,9 +87,9 @@ do
     esac
 done
 
-if [[ "$INPUT" == "none" || "$CONFIG" == "none" || "$S3" == "none" || "$KEY" == "none" ]]
+if [[ "$INPUT" == "none" || "$CONFIG" == "none" || "$KEY" == "none" ]]
 then
-    echo -e "\nERROR: Arguments are required for -i, -c, -s, and -k."
+    echo -e "\nERROR: Arguments are required for -i, -c, and -k."
 
     usage
     exit 1
@@ -117,14 +99,14 @@ fi
 
 
 
-# Check instance/volume status ================================================
+# Check instance/volume status =================================================
 
 check_status() {
     local input_fun="$1"
     local id="$2"
     local num=60
 
-    if [[ $# == 3 ]]
+    if [[ "$#" == 3 ]]
     then
         local num="$3"
     fi
@@ -144,6 +126,76 @@ check_status() {
     echo -e "\nERROR: Timed out waiting for $input_fun $id."
 
     exit 1
+}
+
+
+
+
+
+# Check for the undead =========================================================
+
+check_for_undead() {
+    local kill_job=false
+    
+
+    # Terminate EC2 instances from previous jobs
+    local running_ec2s=$(
+        aws ec2 describe-instances \
+            --filters Name=instance-state-name,Values=running
+    )
+
+    if [[ "$running_ec2s" =~ "InstanceId" ]]
+    then
+        local ec2_ids=$(
+            echo $running_ec2s \
+	        | grep "InstanceId" \
+                | grep -E -o "i\-[[:alnum:]]+"
+        )
+
+	if "$CLEAN_UP"
+        then
+            clean_up "$ec2_ids"
+	
+	else
+            echo -e "\nERROR: An EC2 instance from a previous job is still running, to "
+	    echo "terminate this instance and start a new job, include the -f option."
+
+	    local kill_job=true
+        fi
+    fi
+    
+
+
+    # Delete available EBS volumes from previous jobs
+    available_vols=$(
+        aws ec2 describe-volumes \
+            --filters Name=status,Values=available \
+    )
+
+    if [[ "$available_vols" =~ "VolumeId" ]]
+    then
+        local vol_ids=$(
+	    echo $available_vols \
+                | grep "VolumeId" \
+                | grep -E -o "vol\-[[:alnum:]]+"
+	)
+
+	if "$CLEAN_UP"
+        then
+            clean_up "$vol_ids"
+        
+        else
+            echo -e "\nERROR: An EBS volume from a previous job is still available, "
+	    echo "to delete this volume and start a new job, include the -f option."
+
+	    local kill_job=true
+        fi
+    fi
+
+    if "$kill_job"
+    then
+        exit 1
+    fi
 }
 
 
@@ -341,23 +393,12 @@ create_ebs() {
 
 
     # Create EBS volume
-    if "$USE_SNAP"
-    then
-        vol_id=$(
-            aws ec2 create-volume \
-                --snapshot-id "$INPUT" \
-                --availability-zone "$zone" \
-                | grep -E -o "vol\-[[:alnum:]]+"
-        )
-
-    else
-        vol_id=$(
-            aws ec2 create-volume \
-                --size "$vol_size" \
-                --availability-zone "$zone" \
-                | grep -E -o "vol\-[[:alnum:]]+"
-        )
-    fi
+    vol_id=$(
+        aws ec2 create-volume \
+            --size "$vol_size" \
+            --availability-zone "$zone" \
+            | grep -E -o "vol\-[[:alnum:]]+"
+    )
         
     available_vol() {
         aws ec2 describe-volumes \
@@ -473,63 +514,55 @@ transfer_to_ec2() {
     wait
 
     sleep 60
-
-
-
-    # Create snapshot of EBS volume
-    snap_id=$(
-        aws ec2 create-snapshot \
-            --description "$snap_name" \
-            --volume-id "$vol" \
-            | grep -E -o "snap\-[[:alnum:]]+"
-    )
-
-    completed_snap() {
-        aws ec2 describe-snapshots \
-            --snapshot-ids "$1" \
-            --filters Name=status,Values=completed
-    }
-
-    check_status completed_snap "$snap_id" 120
 }
 
 
 
 
 
-# Terminate EC2 instance and delete EBS volume ======
+# Terminate EC2 instance and delete EBS volume =================================
 
-terminate_ec2() {
-    local ec2="$1"
-    local vol="$2"
-
+clean_up() {
 
 
     # Terminate EC2 instance
-    echo -e "\nTerminating EC2 instance $ec2..."
+    if [[ "$1" =~ ^i\-[[:alnum:]]+$ ]]
+    then
+        local ec2="$1"
 
-    aws ec2 terminate-instances \
-        --instance-ids "$ec2" \
-        > /dev/null
+        echo -e "\nTerminating EC2 instance $ec2..."
 
-    terminated_ec2() {
-        aws ec2 describe-instances \
-            --instance-id "$1" \
-            --filters Name=instance-state-name,Values=terminated
-    }
+        aws ec2 terminate-instances \
+            --instance-ids "$ec2" \
+            > /dev/null
 
-    check_status terminated_ec2 "$ec2"
+        terminated_ec2() {
+            aws ec2 describe-instances \
+                --instance-id "$1" \
+                --filters Name=instance-state-name,Values=terminated
+        }
+
+        check_status terminated_ec2 "$ec2" 
+	
+        echo -e "\nEC2 instance $ec2_id has been terminated."   
+    fi
 
 
 
     # Delete EBS volume
-    echo -e "\nDeleting EBS volume $vol..."
+    if [[ "$1" =~ ^vol\-[[:alnum:]]+$ ]] || [[ "$#" == 2 ]]
+    then
+        local vol="$1"
 
-    aws ec2 delete-volume \
-        --volume-id "$vol" \
-        > /dev/null
+        # Delete EBS volume
+        echo -e "\nDeleting EBS volume $vol..."
 
-    echo -e "\nEC2 instance $ec2_id has been terminated and EBS volume $vol_id has been deleted."
+        aws ec2 delete-volume \
+            --volume-id "$vol" \
+            > /dev/null
+
+	echo -e "\nEBS volume $vol_id has been deleted."
+    fi
 }
 
 
@@ -540,8 +573,11 @@ terminate_ec2() {
 
 main() {
   
-    # Set project name
-    project_name="$PROJECT"_$(date +%Y%m%d-%H%M%S)
+    # Check for old instances/volumes
+    if "$CHILD_LOCK"
+    then
+        check_for_undead
+    fi
 
 
 
@@ -580,13 +616,12 @@ main() {
 
 
     # Transfer data from S3 bucket to EC2 instance
-    if ! "$USE_SNAP"
-    then
-        transfer_to_ec2 \
-            "$S3" \
-            "$vol_id" \
-            "$project_name"
-    fi
+    project_name="$PROJECT"_$(date +%Y%m%d-%H%M%S)
+
+    transfer_to_ec2 \
+        "$S3" \
+        "$vol_id" \
+        "$project_name"
 
     if "$MANUAL_MODE"
     then
@@ -600,18 +635,18 @@ main() {
 
     echo -e "\nBeginning Cell Ranger run..."
 
-    #ssh -i "$KEY" "$EC2_SSH" \
-    #    bash "/home/$EC2_USER/PIPELINE/snakecharmer.sh"
+    ssh -i "$KEY" "$EC2_SSH" \
+        bash "/home/$EC2_USER/PIPELINE/snakecharmer.sh"
 
     echo -e "\nCell Ranger run has completed, transferring results to S3 bucket $S3."
     
-    #ssh -i "$KEY" "$EC2_SSH" \
-    #    "$aws" s3 cp /mnt/EBS/RESULTS "$S3" --recursive
+    ssh -i "$KEY" "$EC2_SSH" \
+        "$aws" s3 cp /mnt/EBS/RESULTS "$S3" --recursive
 
 
 
     # Terminate EC2 instance and delete access keys
-    terminate_ec2 \
+    clean_up \
         "$ec2_id" \
         "$vol_id"
 }
