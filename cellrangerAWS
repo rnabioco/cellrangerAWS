@@ -105,9 +105,9 @@ do
     esac
 done
 
-if [[ "$INPUT" == "none" || "$CONFIG" == "none" || "$KEY" == "none" || "$S3" == "none" ]]
+if [[ "$INPUT" == "none" || "$CONFIG" == "none" || "$S3" == "none" || "$KEY" == "none" ]]
 then
-    echo -e "\nERROR: Arguments are required for -i, -c, -o, and -k."
+    echo -e "\nERROR: Arguments are required for -i, -c, -s, and -k."
 
     usage
     exit 1
@@ -310,7 +310,7 @@ create_ebs() {
             | grep -E -o "^[0-9]+"
     )
 
-    local vol_size=$(expr "$vol_size" \* 2)
+    local vol_size=$(expr "$vol_size" \* 3)
 
     if ! echo "$data_size" | grep -E "GiB|TiB" --quiet
     then
@@ -426,6 +426,7 @@ EOF
 transfer_to_ec2() {
     local s3="$1"
     local vol="$2"
+    local snap_name="$3"
 
 
 
@@ -441,7 +442,7 @@ transfer_to_ec2() {
         cat "$HOME/.aws/credentials" \
             | grep -A 2 "default" \
             | grep "aws_secret_access_key" \
-            | grep -E -o "[[:alnum:]/]+$"
+            | grep -E -o "[[:alnum:]/\+]+$"
     )
 
     local aws="/home/$EC2_USER/.local/bin/aws"
@@ -468,8 +469,10 @@ transfer_to_ec2() {
         ssh -i "$KEY" "$EC2_SSH" \
             "$aws" s3 cp "$s3/$fq" /mnt/EBS/DATA
     done
-
+   
     wait
+
+    sleep 60
 
 
 
@@ -577,8 +580,13 @@ main() {
 
 
     # Transfer data from S3 bucket to EC2 instance
-    transfer_to_ec2 \
-        "$S3"
+    if ! "$USE_SNAP"
+    then
+        transfer_to_ec2 \
+            "$S3" \
+            "$vol_id" \
+            "$project_name"
+    fi
 
     if "$MANUAL_MODE"
     then
@@ -592,13 +600,13 @@ main() {
 
     echo -e "\nBeginning Cell Ranger run..."
 
-    ssh -i "$KEY" "$EC2_SSH" \
-        bash "/home/$EC2_USER/PIPELINE/snakecharmer.sh"
+    #ssh -i "$KEY" "$EC2_SSH" \
+    #    bash "/home/$EC2_USER/PIPELINE/snakecharmer.sh"
 
     echo -e "\nCell Ranger run has completed, transferring results to S3 bucket $S3."
     
-    ssh -i "$KEY" "$EC2_SSH" \
-        "$aws" s3 cp /mnt/EBS/RESULTS "$S3" --recursive
+    #ssh -i "$KEY" "$EC2_SSH" \
+    #    "$aws" s3 cp /mnt/EBS/RESULTS "$S3" --recursive
 
 
 
