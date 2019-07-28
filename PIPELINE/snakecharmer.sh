@@ -1,15 +1,13 @@
 #! /bin/bash
 
 snakemake="$HOME/.local/bin/snakemake"
-data_dir="/mnt/EBS/DATA"
-res_dir="/mnt/EBS/RESULTS"
+res_dir="$HOME/RESULTS"
 log_dir="$res_dir/logs"
 pipeline="$HOME/PIPELINE"
 threads=$(grep -c "^processor" /proc/cpuinfo)
 threads=$(expr "$threads" - 2)
 
 mkdir -p "$log_dir"
-
 
 
 "$snakemake" \

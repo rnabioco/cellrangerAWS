@@ -8,7 +8,6 @@ INPUT="none"
 CONFIG="none"
 S3="none"
 KEY="none"
-PROJECT="cellranger"
 FORCE_CLEAN=true
 
 
@@ -17,11 +16,10 @@ MANUAL_MODE=false
 CLEAN_UP=false
 TRANSFER_DATA=true
 EC2_TYPE="c5.12xlarge"
-AMI="ami-06f3276cab06d4b5f"
+AMI="ami-0673cf28b2cf6abc4"
 ZONE="us-west-2a"
 SECURITY_GROUP="sg-00cf9318d9719735d"
 SUBNET="subnet-083a3a855e543ee1c"
-EC2_USER="ubuntu"
 
 
 # Usage message
@@ -50,7 +48,7 @@ OPTIONS
 
 # Parse arguments =============================================================
 
-while getopts ":hi:c:s:k:t:p:a:fm" args
+while getopts ":hi:c:s:k:t:a:fm" args
 do
     case "$args" in
         h)
@@ -70,7 +68,6 @@ do
         s) S3="$OPTARG" ;;
         k) KEY="$OPTARG" ;;
         t) EC2_TYPE="$OPTARG" ;;
-        p) PROJECT="$OPTARG" ;;
         a) AMI="$OPTARG" ;;
         f) CLEAN_UP=true ;;
         m) MANUAL_MODE=true ;;
@@ -264,14 +261,41 @@ transfer_to_s3() {
 # gateway, modify route table for VPC.
 
 launch_ec2() {
-    local ami="$1"
-    local ec2_type="$2"
-    local zone="$3"
-    local security_group="$4"
-    local subnet="$5"
+    local s3="$1"
+    local ami="$2"
+    local ec2_type="$3"
+    local zone="$4"
     local key_name=$(basename -s .pem "$KEY")
 
     echo -e "\n$(get_time) Launching EC2 $EC2_TYPE instance..."
+
+
+
+    # Get total size of fastqs in S3 bucket
+    local data_size=$(
+        aws s3 ls "$s3" --summarize --human-readable \
+            | grep "Total Size" \
+            | grep -E -o "[0-9].+$"
+    )
+
+    local vol_size=$(
+        echo "$data_size" \
+            | grep -E -o "^[0-9]+"
+    )
+
+    if [[ ! "$data_size" =~ [0-9\.]+.[G|T]iB ]]
+    then
+        local vol_size=10
+    fi
+
+    local vol_size=$(expr "$vol_size" \* 3 + 100)
+
+    root_dev=$(
+        aws ec2 describe-images \
+            --image-id "$ami" \
+            | grep -B 1 "Ebs" \
+            | grep -E -o "/dev/[[:alnum:]]+"
+    )
 
 
 
@@ -283,8 +307,9 @@ launch_ec2() {
             --instance-type "$ec2_type" \
             --image-id "$ami" \
             --placement AvailabilityZone="$zone" \
-            --security-group-ids "$security_group" \
-            --subnet-id "$subnet" \
+            --block-device-mapping DeviceName="$root_dev",Ebs={VolumeSize="$vol_size"} \
+            --security-group-ids "$SECURITY_GROUP" \
+            --subnet-id "$SUBNET" \
             --key-name "$key_name" \
             --associate-public-ip-address \
             | grep -E -o "InstanceId\": \"i\-[[:alnum:]]+" \
@@ -338,10 +363,12 @@ get_dns() {
                     | head -n 1
             )
 
-            EC2_SSH="$EC2_USER@$dns"
+            EC2_SSH="ubuntu@$dns"
+
+	    sleep 10
 
             echo -e "\n$(get_time) Connection has been established with EC2 instance $ec2, use the following command to manually connect:"
-	    echo "ssh -i $KEY $EC2_SSH"
+	    echo -e "ssh -i $KEY $EC2_SSH\n"
 
             return 0
         fi
@@ -469,7 +496,7 @@ create_ebs() {
         sudo chmod -R 777 /mnt/EBS
 EOF
 
-    echo -e "\n$(get_time) EBS volume $vol_id ($vol_size GB) was created and mounted to EC2 instance $ec2."
+    echo -e "\n$(get_time) EBS volume $vol_id ($vol_size GB) has been mounted to EC2 instance $ec2."
 }
 
 
@@ -480,7 +507,7 @@ EOF
 
 transfer_to_ec2() {
     local s3="$1"
-    local vol="$2"
+    #local vol="$2"
 
 
 
@@ -499,9 +526,9 @@ transfer_to_ec2() {
             | grep -E -o "[[:alnum:]/\+]+$"
     )
 
-    local aws="/home/$EC2_USER/.local/bin/aws"
+    local aws="~/.local/bin/aws"
 
-    ssh -i "$KEY" "$EC2_SSH" \
+    ssh -o "StrictHostKeyChecking no" -i "$KEY" "$EC2_SSH" \
         "$aws" configure set aws_access_key_id "$iam_id"
 
     ssh -i "$KEY" "$EC2_SSH" \
@@ -510,23 +537,28 @@ transfer_to_ec2() {
 
 
     # Transfer files to EBS volume
-    scp -i "$KEY" "$CONFIG" "$EC2_SSH:~/"
-
     local s3_fqs=$(
         aws s3 ls "$s3" \
             | grep -E -o "[[:alnum:]_\-\.]+.fastq.gz"
     )
 
+    echo -e "\n$(get_time) Transferring the following files from S3 bucket $s3 to EC2 instance:"
+    echo "$s3_fqs"
+
+    scp -i "$KEY" "$CONFIG" "$EC2_SSH:~/" \
+        > /dev/null
+
     # Leave s3_fqs unquoted
     for fq in $s3_fqs
     do 
         ssh -i "$KEY" "$EC2_SSH" \
-            "$aws" s3 cp "$s3/$fq" /mnt/EBS/DATA
+            "$aws" s3 cp "$s3/$fq" "~/DATA" \
+                > /dev/null
     done
    
     wait
 
-    sleep 60
+    sleep 30
 }
 
 
@@ -538,17 +570,17 @@ transfer_to_ec2() {
 run_cellranger() {
     local s3="$1"
 
-    aws="/home/$EC2_USER/.local/bin/aws"
+    aws="~/.local/bin/aws"
 
     echo -e "\n$(get_time) Beginning Cell Ranger run..."
 
     ssh -i "$KEY" "$EC2_SSH" \
-        bash "/home/$EC2_USER/PIPELINE/snakecharmer.sh"
+        bash "~/PIPELINE/snakecharmer.sh"
 
     echo -e "\n$(get_time) Cell Ranger run has completed, transferring results to S3 bucket $s3."
     
     ssh -i "$KEY" "$EC2_SSH" \
-        "$aws" s3 cp /mnt/EBS/RESULTS "$s3" --recursive
+        "$aws" s3 cp "~/RESULTS" "$s3" --recursive
 }
 
 
@@ -628,11 +660,10 @@ main() {
 
     # Launch EC2 instance and retrieve ec2_id
     launch_ec2 \
+        "$S3" \
         "$AMI" \
         "$EC2_TYPE" \
-        "$ZONE" \
-        "$SECURITY_GROUP" \
-        "$SUBNET"
+        "$ZONE"
 
 
 
@@ -642,18 +673,16 @@ main() {
 
 
     # Create EBS volume and retrieve vol_id
-    create_ebs \
-        "$INPUT" \
-        "$ec2_id" \
-        "$ZONE" \
-        "$S3"
+    #create_ebs \
+    #    "$INPUT" \
+    #    "$ec2_id" \
+    #    "$ZONE" \
+    #    "$S3"
 
 
 
     # Transfer data from S3 bucket to EC2 instance
-    transfer_to_ec2 \
-        "$S3" \
-        "$vol_id"
+    transfer_to_ec2 "$S3" 
 
     if "$MANUAL_MODE"
     then
@@ -667,10 +696,8 @@ main() {
 
 
 
-    # Terminate EC2 instance and delete EBS volumes
-    clean_up \
-        "$ec2_id" \
-        "$vol_id"
+    # Terminate EC2 instance
+    clean_up "$ec2_id"
 }
 
 

@@ -15,8 +15,8 @@ GENOME      = config["GENOME"]
 
 # Set paths
 HOME       = os.path.expanduser("~")
-DATA       = os.path.join("/mnt/EBS/DATA")
-RESULTS    = os.path.join("/mnt/EBS/RESULTS")
+DATA       = os.path.join(HOME, "DATA")
+RESULTS    = os.path.join(HOME, "RESULTS")
 GENOME     = os.path.join(HOME, "PIPELINE/ref", GENOME)
 ADT_REF    = os.path.join(HOME, "PIPELINE/totalseq_111518.csv")
 CELLRANGER = os.path.join(HOME, "cellranger-3.0.2/cellranger")
