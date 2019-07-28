@@ -5,10 +5,10 @@ set -o nounset -o pipefail -o errexit
 
 # Inputs
 INPUT="none"
-CONFIG="none"
 S3="none"
+CONFIG="none"
 KEY="none"
-FORCE_CLEAN=true
+FORCE_CLEAN=false
 
 
 # Defaults
@@ -29,15 +29,15 @@ USAGE
 "$0" [OPTIONS]
 
 OPTIONS
--i, path to local directory or S3 bucket containing fastq files.
--c, path to config.yaml ...OR S3 BUCKET.
--k, path to AWS private key.
-
 -h, display this message.
--s, name of an S3 bucket to transfer data to, if the bucket does not exist a new one will be created.
+-i, path to local directory containing fastq files, if this option is omitted files in the S3 bucket are used.
+-s, name of an S3 bucket (starting with \"s3://\").
+-c, path to config.yaml.
+-k, path to an AWS private key.
+
 -t, EC2 instance type (default is "$EC2_TYPE").
 -a, ID for machine image configured to run cellranger (default is "$AMI").
--f, terminate running instances/volumes and start new job.
+-f, terminate running instances and start a new job.
 -m, run in manual mode, this transfers data to an EC2 instance and exits.
     """
 }
@@ -48,24 +48,16 @@ OPTIONS
 
 # Parse arguments =============================================================
 
-while getopts ":hi:c:s:k:t:a:fm" args
+while getopts ":hi:s:c:k:t:a:fm" args
 do
     case "$args" in
         h)
             usage
             exit 0
             ;;
-        i) 
-            INPUT="$OPTARG"
-
-            if [[ "$INPUT" =~ ^s3://.+ ]]
-            then
-                TRANSFER_DATA=false
-                S3="$INPUT"
-            fi
-            ;;
-        c) CONFIG="$OPTARG" ;;
+        i) INPUT="$OPTARG" ;;
         s) S3="$OPTARG" ;;
+        c) CONFIG="$OPTARG" ;;
         k) KEY="$OPTARG" ;;
         t) EC2_TYPE="$OPTARG" ;;
         a) AMI="$OPTARG" ;;
@@ -84,12 +76,17 @@ do
     esac
 done
 
-if [[ "$INPUT" == "none" || "$CONFIG" == "none" || "$KEY" == "none" ]]
+if [[ "$S3" == "none" || "$CONFIG" == "none" || "$KEY" == "none" ]]
 then
-    echo -e "\nERROR: Arguments are required for -i, -c, and -k."
+    echo -e "\nERROR: Arguments are required for -s, -c, and -k."
 
     usage
     exit 1
+fi
+
+if [[ "$INPUT" == "none" ]]
+then
+    TRANSFER_DATA=false
 fi
 
 
@@ -136,18 +133,6 @@ running_ec2() {
         --filters Name=instance-state-name,Values=running
 }
 
-available_vol() {
-    aws ec2 describe-volumes \
-        --volume-ids $1 \
-        --filters Name=status,Values=available
-}
-
-attached_vol() {
-    aws ec2 describe-volumes \
-        --volume-ids $1 \
-        --filters Name=attachment.status,Values=attached
-}
-
 terminated_ec2() {
     aws ec2 describe-instances \
         --instance-ids $1 \
@@ -158,18 +143,16 @@ terminated_ec2() {
 
 
 
-# Check for the undead =========================================================
+# Check for running EC2 instances ==============================================
 
-check_for_undead() {
-    local kill_job=false
-    
+check_for_ec2() {
 
-    # Terminate EC2 instances from previous jobs
     local running_ec2s=$(
         aws ec2 describe-instances \
             --filters Name=instance-state-name,Values=running
     )
 
+    # Terminate EC2 instances from previous jobs
     if [[ "$running_ec2s" =~ "InstanceId" ]]
     then
         local ec2_ids=$(
@@ -180,45 +163,13 @@ check_for_undead() {
 
 	if "$CLEAN_UP"
         then
-            clean_up "$ec2_ids"
+            terminate_ec2 "$ec2_ids"
 	
 	else
             echo -e "\n$(get_time) ERROR: An EC2 instance from a previous job is still running, to terminate this instance and start a new job, include the -f option."
 
-	    local kill_job=true
+	    exit 1
         fi
-    fi
-    
-
-
-    # Delete EBS volumes from previous jobs
-    available_vols=$(
-        aws ec2 describe-volumes \
-            --filters Name=status,Values=available,in-use \
-    )
-
-    if [[ "$available_vols" =~ "VolumeId" ]]
-    then
-        local vol_ids=$(
-	    echo "$available_vols" \
-                | grep "VolumeId" \
-                | grep -E -o "vol\-[[:alnum:]]+"
-	)
-
-	if "$CLEAN_UP"
-        then
-            clean_up "$vol_ids"
-        
-        else
-            echo -e "\n$(get_time) ERROR: An EBS volume from a previous job is still available, to delete this volume and start a new job, include the -f option."
-
-	    local kill_job=true
-        fi
-    fi
-
-    if "$kill_job"
-    then
-        exit 1
     fi
 }
 
@@ -232,21 +183,15 @@ transfer_to_s3() {
     local input="$1"
     local s3="$2"
 
-    if ! aws s3 ls "$s3" > /dev/null
-    then
-        bucket_name=$(
-            echo "$s3" \
-                | grep -E -o "s3://[[:alnum:]\-]+" \
-                | sed 's/s3:\/\///g'
-        )
+    local local_fqs=$(ls "$input/"*.fastq.gz)
 
-        aws s3api create-bucket \
-            --bucket "$bucket_name"
-    fi
+    echo -e "\n$(get_time) Transferring the following files to S3 bucket $s3:"
+    echo "$local_fqs"
 
-    for fq in "$input"*.fastq.gz
+    for fq in $local_fqs
     do
-        aws s3 cp "$fq" "$s3"
+        aws s3 cp "$fq" "$s3" \
+            > /dev/null
     done
 }
 
@@ -270,7 +215,6 @@ launch_ec2() {
     echo -e "\n$(get_time) Launching EC2 $EC2_TYPE instance..."
 
 
-
     # Get total size of fastqs in S3 bucket
     local data_size=$(
         aws s3 ls "$s3" --summarize --human-readable \
@@ -288,7 +232,7 @@ launch_ec2() {
         local vol_size=10
     fi
 
-    local vol_size=$(expr "$vol_size" \* 3 + 100)
+    local vol_size=$(expr "$vol_size" \* 4 + 100)
 
     root_dev=$(
         aws ec2 describe-images \
@@ -296,7 +240,6 @@ launch_ec2() {
             | grep -B 1 "Ebs" \
             | grep -E -o "/dev/[[:alnum:]]+"
     )
-
 
 
     # Launch EC2 instance
@@ -308,10 +251,7 @@ launch_ec2() {
             --image-id "$ami" \
             --placement AvailabilityZone="$zone" \
             --block-device-mapping DeviceName="$root_dev",Ebs={VolumeSize="$vol_size"} \
-            --security-group-ids "$SECURITY_GROUP" \
-            --subnet-id "$SUBNET" \
             --key-name "$key_name" \
-            --associate-public-ip-address \
             | grep -E -o "InstanceId\": \"i\-[[:alnum:]]+" \
             | grep -E -o "i\-[[:alnum:]]+"
     )
@@ -333,7 +273,6 @@ get_dns() {
     echo -e "\n$(get_time) Attempting to make contact with EC2 instance $ec2..."
 
 
-
     # Retrieve public IP to check connectivity
     local ip=$(
         aws ec2 describe-instances \
@@ -341,7 +280,6 @@ get_dns() {
             | grep -E "PublicIpAddress" \
             | grep -E -o "[0-9\.]+"
     )
-
 
 
     # Ping IP
@@ -375,128 +313,12 @@ get_dns() {
     done
 
 
-
     # If IP does not respond to ping, terminate instance
     echo -e "\n$(get_time) ERROR: Unable to contact EC2 instance $ec2."
 
-    clean_up "$ec2"
+    terminate_ec2 "$ec2"
 
     exit 1
-}
-
-
-
-
-
-# Create and mount EBS volume on EC2 instance ==================================
-# Since snapshots are no longer being saved, it might be better to adjust the
-# size of the root volume when launching the instance instead of attaching an
-# additional volume
-
-create_ebs() {
-    local input="$1"
-    local ec2="$2"
-    local zone="$3"
-    local s3="$4"
-
-    echo -e "\n$(get_time) Creating EBS volume..."
-
-
-
-    # Get total file size
-    local data_size=$(
-        aws s3 ls "$s3" --summarize --human-readable \
-            | grep "Total Size" \
-            | grep -E -o "[0-9].+$"
-    )
-
-    local vol_size=$(
-        echo "$data_size" \
-            | grep -E -o "^[0-9]+"
-    )
-
-    local vol_size=$(expr "$vol_size" \* 3)
-
-    if ! echo "$data_size" | grep -E "GiB|TiB" --quiet
-    then
-        local vol_size=10
-    fi
-
-    if [[ "$vol_size" < 10 ]]
-    then
-        local vol_size=10
-    fi
-
-
-
-    # Get list of attached devices, need this to identify attached EBS volume
-    local old_devs=$(
-        ssh -o "StrictHostKeyChecking no" -i "$KEY" "$EC2_SSH" \
-            sudo fdisk -l \
-                | grep -E -o "/dev/[[:alnum:]]+" \
-                2>&1
-    )
-
-    # Keep old_devs unquoted here
-    local old_devs=$(
-        echo $old_devs \
-            | sed 's/ /|/g'
-    )
-
-
-
-    # Create EBS volume
-    vol_id=$(
-        aws ec2 create-volume \
-            --size "$vol_size" \
-            --availability-zone "$zone" \
-            | grep -E -o "vol\-[[:alnum:]]+"
-    )
-        
-    check_status available_vol "$vol_id"
-
-
-
-    # Attach EBS volume
-    aws ec2 attach-volume \
-        --instance-id "$ec2" \
-        --volume-id "$vol_id" \
-        --device /dev/sdh \
-        > /dev/null
-
-    check_status attached_vol "$vol_id"
-
-
-
-    # Identify device path for EBS volume
-    local new_devs=$(
-        ssh -i "$KEY" "$EC2_SSH" \
-            sudo fdisk -l \
-                | grep -E "^Disk .+$vol_size GiB" \
-                | grep -E -o "/dev/[[:alnum:]]+" \
-                2>&1
-    )
-    
-    local dev_path=$(
-        echo "$new_devs" \
-            | grep -E -v "$old_devs"
-    )
-
-
-
-    # Format and mount EBS volume
-    ssh -i "$KEY" "$EC2_SSH" bash <<EOF
-        sudo parted "$dev_path" mklabel gpt > /dev/null 2>&1
-        sudo parted -a opt "$dev_path" mkpart primary ext4 0% 100% > /dev/null 2>&1
-        sudo mkfs.ext4 -F "$dev_path" > /dev/null 2>&1
-
-        sudo mkdir -p /mnt/EBS
-        sudo mount "$dev_path" /mnt/EBS
-        sudo mkdir -p /mnt/EBS/DATA
-        sudo chmod -R 777 /mnt/EBS
-EOF
-
-    echo -e "\n$(get_time) EBS volume $vol_id ($vol_size GB) has been mounted to EC2 instance $ec2."
 }
 
 
@@ -508,7 +330,6 @@ EOF
 transfer_to_ec2() {
     local s3="$1"
     #local vol="$2"
-
 
 
     # Configure AWS on EC2 instance
@@ -535,8 +356,7 @@ transfer_to_ec2() {
         "$aws" configure set aws_secret_access_key "$iam_key"
 
 
-
-    # Transfer files to EBS volume
+    # Transfer files to EC2 instance
     local s3_fqs=$(
         aws s3 ls "$s3" \
             | grep -E -o "[[:alnum:]_\-\.]+.fastq.gz"
@@ -580,7 +400,7 @@ run_cellranger() {
     echo -e "\n$(get_time) Cell Ranger run has completed, transferring results to S3 bucket $s3."
     
     ssh -i "$KEY" "$EC2_SSH" \
-        "$aws" s3 cp "~/RESULTS" "$s3" --recursive
+        "$aws" s3 cp "~/RESULTS" "$s3/RESULTS" --recursive
 }
 
 
@@ -589,47 +409,19 @@ run_cellranger() {
 
 # Terminate EC2 instance and delete EBS volume =================================
 
-clean_up() {
+terminate_ec2() {
+    local ec2="$1"
 
+    echo -e "\n$(get_time) Terminating EC2 instance "$ec2"..."
 
-    # Terminate EC2 instance
-    if [[ "$1" =~ ^i\-[[:alnum:]]+ ]]
-    then
-        local ec2="$1"
+    aws ec2 terminate-instances \
+        --instance-ids $ec2 \
+        > /dev/null
 
-        echo -e "\n$(get_time) Terminating EC2 instance "$ec2"..."
-
-        aws ec2 terminate-instances \
-            --instance-ids $ec2 \
-            > /dev/null
-
-        check_status terminated_ec2 "$ec2" 
+    check_status terminated_ec2 "$ec2" 
 	
-	# Keep this quoting pattern so multiple IDs are displayed on one line
-        echo -e "\n$(get_time) EC2 instance "$ec2" has been terminated."   
-    fi
-
-
-
-    # Delete EBS volume
-    if [[ "$1" =~ ^vol\-[[:alnum:]]+ ]] || [[ "$#" == 2 ]]
-    then
-        local vol="$1"
-
-	if [[ "$#" == 2 ]]
-        then
-            local vol="$2"
-        fi
-
-        # Delete EBS volume
-        echo -e "\n$(get_time) Deleting EBS volume "$vol"..."
-
-        aws ec2 delete-volume \
-            --volume-id $vol \
-            > /dev/null
-
-	echo -e "\n$(get_time) EBS volume "$vol" has been deleted."
-    fi
+    # Keep this quoting pattern so multiple IDs are displayed on one line
+    echo -e "\n$(get_time) EC2 instance "$ec2" has been terminated."   
 }
 
 
@@ -643,9 +435,8 @@ main() {
     # Terminate instances/volumes from previous runs
     if "$FORCE_CLEAN"
     then
-        check_for_undead
+        check_for_ec2
     fi
-
 
 
     # Transfer data to S3 bucket
@@ -657,7 +448,6 @@ main() {
     fi
 
 
-
     # Launch EC2 instance and retrieve ec2_id
     launch_ec2 \
         "$S3" \
@@ -666,19 +456,8 @@ main() {
         "$ZONE"
 
 
-
     # Check EC2 instance connectivity and retrieve EC2_SSH
     get_dns "$ec2_id"
-
-
-
-    # Create EBS volume and retrieve vol_id
-    #create_ebs \
-    #    "$INPUT" \
-    #    "$ec2_id" \
-    #    "$ZONE" \
-    #    "$S3"
-
 
 
     # Transfer data from S3 bucket to EC2 instance
@@ -690,19 +469,21 @@ main() {
     fi
 
 
-
     # Run Cell Ranger
     run_cellranger "$S3"
 
 
-
     # Terminate EC2 instance
-    clean_up "$ec2_id"
+    terminate_ec2 "$ec2_id"
 }
 
 
 
+
+
 main
+
+
 
 
 
