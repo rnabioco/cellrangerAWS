@@ -54,7 +54,9 @@ def _create_group(wildcards):
     group. Return group name and path to csv as a list.
     """
     
-    samples  = GROUP.split("-")
+    samples    = GROUP.split(",")
+    group_name = 
+
     aggr_csv = os.path.join(RESULTS, GROUP + "_aggr.csv")
     out      = open(aggr_csv, 'w')
 

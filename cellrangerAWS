@@ -110,11 +110,11 @@ check_status() {
         local num="$3"
     fi
 
-    echo -e "\n$(get_time) Checking for $input_fun "$id"..."
-
     for i in $(seq 1 "$num")
     do   
         sleep 20
+
+        echo -e "\n$(get_time) Checking for $input_fun "$id"..."
 
         if "$input_fun" "$id" | grep -E --quiet "$id_regex"
         then
@@ -270,8 +270,6 @@ launch_ec2() {
 get_dns() {
     local ec2="$1"
 
-    echo -e "\n$(get_time) Attempting to make contact with EC2 instance $ec2..."
-
 
     # Retrieve public IP to check connectivity
     local ip=$(
@@ -285,6 +283,8 @@ get_dns() {
     # Ping IP
     for i in $(seq 1 20)
     do
+        echo -e "\n$(get_time) Pinging EC2 instance $ec2..."
+
         local packet_loss=$(
             ping -c 10 "$ip" \
                 | grep -E -o "[0-9]+% packet loss" \
@@ -303,10 +303,10 @@ get_dns() {
 
             EC2_SSH="ubuntu@$dns"
 
-	    sleep 10
+	        sleep 10
 
-            echo -e "\n$(get_time) Connection has been established with EC2 instance $ec2, use the following command to manually connect:"
-	    echo -e "ssh -i $KEY $EC2_SSH\n"
+            echo -e "\n$(get_time) Contact has been made with EC2 instance $ec2, use the following command to manually connect:"
+	        echo -e "ssh -i $KEY $EC2_SSH\n"
 
             return 0
         fi
@@ -329,7 +329,6 @@ get_dns() {
 
 transfer_to_ec2() {
     local s3="$1"
-    #local vol="$2"
 
 
     # Configure AWS on EC2 instance
@@ -337,7 +336,7 @@ transfer_to_ec2() {
         cat "$HOME/.aws/credentials" \
             | grep -A 2 "default" \
             | grep "aws_access_key_id" \
-	    | grep -E -o "[[:alnum:]]+$"
+	        | grep -E -o "[[:alnum:]]+$"
     )
 
     local iam_key=$(
@@ -476,10 +475,6 @@ main() {
     # Terminate EC2 instance
     terminate_ec2 "$ec2_id"
 }
-
-
-
-
 
 main
 

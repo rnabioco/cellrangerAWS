@@ -1,0 +1,85 @@
+# ==== Config file for running the 10x Cell Ranger pipeline ====================
+
+
+# Path to the fastq directory, multiple directories can be given.
+RAW_DATA:
+    - "path/to/data_dir_1"
+    - "path/to/data_dir_2"
+
+# Path to the output directory.
+RESULTS:
+    "path/to/results_dir"
+
+# Sample names for gene expression fastqs. If the same libraries were
+# sequenced multiple times, just include all the fastq directories in the
+# RAW_DATA list and make sure the fastqs from all runs begin with the
+# sample name. Only fastqs that begin with the sample name will be 
+# included in the analysis.
+RNA_SAMPLES:
+    - "Sample_1_cDNA"
+    - "Sample_2_cDNA"
+    - "Sample_3_cDNA"
+    - "Sample_4_cDNA"
+
+# Sample groups that should be used with cellranger aggr. Include the gene
+# expression names separated by commas for samples that should be
+# aggregated together. Include multiple entries if multiple groups of
+# samples are to be aggregated. Leave blank to skip this step.
+GROUPS:
+    - "Sample_1_cDNA,Sample_2_cDNA"
+    - "Sample_3_cDNA,Sample_4_cDNA"
+
+# Path to the Cell Ranger genome reference.
+GENOME:
+    "/beevol/home/rbilab/ref/cellranger/human/refdata-cellranger-GRCh38-3.0.0"
+
+# Sample names for CITE-seq and cell hashing fastqs. If both methods were
+# used, include both names separated by a comma. CITE-seq and cell hashing
+# fastqs will be combined for each sample before running Cell Ranger. If 
+# the libraries were sequenced multiple times, just make sure the fastqs 
+# from all runs begin with the sample name. If CITE-seq or cell hashing 
+# was not performed, leave this blank.
+ADT_SAMPLES:
+    - "Sample_1_ADT,Sample_1_HTO"
+    - "Sample_2_ADT,Sample_2_HTO"
+    - "Sample_3_ADT"
+    - "Sample_4_ADT"
+
+# Path to the antibody reference table used to extract the antibody name 
+# and barcode. If CITE-seq or cell hashing was not performed, leave this 
+# blank.
+ADT_REF:
+    "dbases/Totalseq_111518.csv"
+
+# List the TotalSeq catalog numbers for all antibodies used in the
+# experiment. If CITE-seq or cell hashing was not performed, leave this
+# blank.
+ANTIBODIES:
+    - "A0063"
+    - "A0085"
+    - "A0087"
+    - "A0088"
+
+# Sample names for VDJ fastqs. Follow the same parameters required for gene
+# expression fastqs. If VDJ sequencing was not performed, leave this blank.
+VDJ_SAMPLES:
+    - "Sample_1_VDJ"
+    - "Sample_2_VDJ"
+    - "Sample_3_VDJ"
+
+# Path to the Cell Ranger VDJ reference. If VDJ sequencing was not performed,
+# leave this blank.
+VDJ_REF:
+    "/beevol/home/rbilab/ref/cellranger/human/refdata-cellranger-vdj-GRCh38-alts-ensembl-3.1.0"
+
+# Maximum number of jobs per sample that can be submitted by Cell Ranger
+# at a time.
+MAX_JOBS:
+    24
+
+# Path to an LSF template, this is optional.
+LSF_TEMPLATE:
+    lsf.template
+
+
+
