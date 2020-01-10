@@ -67,11 +67,11 @@ do
             echo -e "\nERROR: -$OPTARG requires an argument"
 
             usage
-	    exit 1
+            exit 1
             ;;
-	*) 
+        *) 
             usage
-	    exit 1
+            exit 1
             ;;
     esac
 done
