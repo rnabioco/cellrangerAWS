@@ -1,0 +1,36 @@
+# ==== Config file for running the 10x Cell Ranger pipeline ====================
+
+
+# Genome to use for alignment
+GENOME:
+    "tiny"
+
+# Sample names for gene expression fastqs. If the same libraries were
+# sequenced multiple times, just include all the fastq directories in the
+# RAW_DATA list and make sure the fastqs from all runs begin with the
+# sample name. If gene expression fastqs are not being processed, leave
+# this blank.
+RNA_SAMPLES:
+    - "tinygex"
+
+# Sample names for CITE-seq and cell hashing fastqs. If both methods were
+# used, include both names separated by a comma. CITE-seq and cell hashing
+# fastqs will be combined for each sample before running Cell Ranger. If 
+# the libraries were sequenced multiple times, just make sure the fastqs 
+# from all runs begin with the sample name. If CITE-seq or cell hashing 
+# was not performed, leave this blank.
+ADT_SAMPLES:
+
+
+# List the TotalSeq catalog numbers for all antibodies used in the
+# experiment. If CITE-seq or cell hashing was not performed, leave this
+# blank.
+ANTIBODIES:
+
+
+# Sample names for VDJ fastqs. Follow the same parameters required for gene
+# expression fastqs. If VDJ sequencing was not performed, leave this blank.
+VDJ_SAMPLES:
+
+
+

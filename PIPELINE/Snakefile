@@ -1,60 +1,111 @@
+# ===== Pipeline for running cellranger ========================================
+
+
+# Configure shell for all rules 
 shell.executable("/bin/bash")
-
-import os 
+shell.prefix("set -o nounset -o pipefail -o errexit -x; ")
+import subprocess
+import shutil
 import glob
-import multiprocessing
+import os 
+import re
 
+# Paths
+HOME       = os.path.expanduser("~")
+CELLRANGER = HOME + "/cellranger-3.1.0/cellranger"
+RAW_DATA   = HOME + "/DATA"
+RESULTS    = HOME + "/RESULTS"
+ADT_REF    = HOME + "/PIPELINE/Totalseq-Barcode-Sequence-NoGeneID.csv"
 
-# Inputs from config.yaml
+# Parameters from config.yaml
+GENOME      = config["GENOME"]
 RNA_SAMPLES = config["RNA_SAMPLES"]
 ADT_SAMPLES = config["ADT_SAMPLES"]
 ANTIBODIES  = config["ANTIBODIES"]
-GENOME      = config["GENOME"]
+VDJ_SAMPLES = config["VDJ_SAMPLES"]
 
+# Genome references
+REFERENCES = {
+    "GRCh38" : {
+        "RNA_REF" : "GRCh38",
+        "VDJ_REF" : "refdata-cellranger-vdj-GRCh38-alts-ensembl-3.1.0"
+    },
+    "GRCm38" : {
+        "RNA_REF" : "",
+        "VDJ_REF" : "refdata-cellranger-vdj-GRCm38-alts-ensembl-3.1.0"
+    },
+    "tiny" : {
+        "RNA_REF" : "tiny"
+    }
+}
 
+RNA_REF = REFERENCES[GENOME]["RNA_REF"]
+RNA_REF = HOME + "/PIPELINE/ref/" + RNA_REF
 
-# Set paths
-HOME       = os.path.expanduser("~")
-DATA       = os.path.join(HOME, "DATA")
-RESULTS    = os.path.join(HOME, "RESULTS")
-GENOME     = os.path.join(HOME, "PIPELINE/ref", GENOME)
-ADT_REF    = os.path.join(HOME, "PIPELINE/totalseq_111518.csv")
-CELLRANGER = os.path.join(HOME, "cellranger-3.0.2/cellranger")
-
-
-
-# Set sample names
-SAMPLES = RNA_SAMPLES
-GROUP   = "-".join(RNA_SAMPLES)
-
-if ADT_SAMPLES is not None:
-    SAMPLES = [x + "-" + y for x, y in zip(RNA_SAMPLES, ADT_SAMPLES)]
-
-else:
-    ADT_SAMPLES = "none"
-
-
+VDJ_REF = REFERENCES[GENOME]["VDJ_REF"]
+VDJ_REF = HOME + "/PIPELINE/ref/" + VDJ_REF
 
 # Set thread count
-N_SAMPLES   = len(RNA_SAMPLES)
+N_SAMPLES   = max(len(RNA_SAMPLES), len(ADT_SAMPLES)) + len(VDJ_SAMPLES)
 N_THREADS   = multiprocessing.cpu_count() - 2
 JOB_THREADS = int(N_THREADS / N_SAMPLES)
 
+# Function to check paths for input files/directories
+def _check_path(path):
+    if os.path.exists(path):
+        return os.path.abspath(path)
+    else:
+        sys.exit("ERROR: " + path + " does not exist.")
 
+# Set sample/group names
+FASTQ_REGEX = "_S[0-9]+_L[0-9]+_R[12]_[0-9]+\.fastq\.gz"
+
+ALL_SAMPLES = []
+
+if RNA_SAMPLES:
+    RNA_SAMPLES = [x.strip() for x in RNA_SAMPLES]
+    SAMPLES     = RNA_SAMPLES
+    ALL_SAMPLES = ALL_SAMPLES + SAMPLES
+
+if ADT_SAMPLES:
+    ADT_SAMPLES = [re.sub(" ", "", x) for x in ADT_SAMPLES]
+    SAMPLES     = [re.sub(",", "_", x) for x in ADT_SAMPLES]
+    ADT_REF     = _check_path(ADT_REF)
+    ALL_SAMPLES = ALL_SAMPLES + SAMPLES
+
+    if RNA_SAMPLES:
+        SAMPLES = [x + "-" + y for x, y in zip(RNA_SAMPLES, SAMPLES)]
+
+if VDJ_SAMPLES:
+    VDJ_SAMPLES = [x.strip() for x in VDJ_SAMPLES]
+    VDJ_REF     = _check_path(VDJ_REF)
+    ALL_SAMPLES = ALL_SAMPLES + VDJ_SAMPLES
+
+# Check directory/file paths
+RAW_DATA = [_check_path(x) for x in RAW_DATA]
+RESULTS  = _check_path(RESULTS)
 
 # Final output files
 rule all:
     input:
         expand(
-            "{results}/logs/{sample}_count.out",
+            "{results}/logs/antibody_csv.out",
+            results = RESULTS
+        ),
+        expand(
+            "{results}/logs/{sample}_count.out", 
             results = RESULTS, sample = SAMPLES
         ),
         expand(
-            "{results}/logs/{group}_aggr.out",
-            results = RESULTS, group = GROUP
-       )
+            "{results}/logs/{vdj_sample}_vdj.out",
+            results = RESULTS, vdj_sample = VDJ_SAMPLES
+        ),
+        expand(
+            "{results}/count_metrics.csv",
+            results = RESULTS
+        )
 
+include: "src/rules/cellranger.snake"
 
-include: "cellranger.snake"
 
 
