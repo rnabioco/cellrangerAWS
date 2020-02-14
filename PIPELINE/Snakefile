@@ -4,18 +4,33 @@
 # Configure shell for all rules 
 shell.executable("/bin/bash")
 shell.prefix("set -o nounset -o pipefail -o errexit -x; ")
+import multiprocessing
 import subprocess
 import shutil
 import glob
 import os 
 import re
 
+# Function to check paths for input files/directories
+def _check_path(path):
+    if os.path.exists(path):
+        return os.path.abspath(path)
+    else:
+        sys.exit("ERROR: " + path + " does not exist.")
+
 # Paths
 HOME       = os.path.expanduser("~")
 CELLRANGER = HOME + "/cellranger-3.1.0/cellranger"
 RAW_DATA   = HOME + "/DATA"
 RESULTS    = HOME + "/RESULTS"
-ADT_REF    = HOME + "/PIPELINE/Totalseq-Barcode-Sequence-NoGeneID.csv"
+SRC        = HOME + "/PIPELINE"
+ADT_REF    = SRC + "/ref/Totalseq-Barcode-Sequence-NoGeneID.csv"
+
+CELLRANGER = _check_path(CELLRANGER)
+RAW_DATA   = _check_path(RAW_DATA)
+RESULTS    = _check_path(RESULTS)
+SRC        = _check_path(SRC)
+ADT_REF    = _check_path(ADT_REF)
 
 # Parameters from config.yaml
 GENOME      = config["GENOME"]
@@ -35,27 +50,18 @@ REFERENCES = {
         "VDJ_REF" : "refdata-cellranger-vdj-GRCm38-alts-ensembl-3.1.0"
     },
     "tiny" : {
-        "RNA_REF" : "tiny"
+        "RNA_REF" : "tiny",
+        "VDJ_REF" : ""
     }
 }
 
 RNA_REF = REFERENCES[GENOME]["RNA_REF"]
-RNA_REF = HOME + "/PIPELINE/ref/" + RNA_REF
+RNA_REF = SRC + "/ref/" + RNA_REF
+RNA_REF = _check_path(RNA_REF)
 
 VDJ_REF = REFERENCES[GENOME]["VDJ_REF"]
-VDJ_REF = HOME + "/PIPELINE/ref/" + VDJ_REF
-
-# Set thread count
-N_SAMPLES   = max(len(RNA_SAMPLES), len(ADT_SAMPLES)) + len(VDJ_SAMPLES)
-N_THREADS   = multiprocessing.cpu_count() - 2
-JOB_THREADS = int(N_THREADS / N_SAMPLES)
-
-# Function to check paths for input files/directories
-def _check_path(path):
-    if os.path.exists(path):
-        return os.path.abspath(path)
-    else:
-        sys.exit("ERROR: " + path + " does not exist.")
+VDJ_REF = SRC + "/ref/" + VDJ_REF
+VDJ_REF = _check_path(VDJ_REF)
 
 # Set sample/group names
 FASTQ_REGEX = "_S[0-9]+_L[0-9]+_R[12]_[0-9]+\.fastq\.gz"
@@ -66,24 +72,28 @@ if RNA_SAMPLES:
     RNA_SAMPLES = [x.strip() for x in RNA_SAMPLES]
     SAMPLES     = RNA_SAMPLES
     ALL_SAMPLES = ALL_SAMPLES + SAMPLES
+    N_SAMPLES   = len(RNA_SAMPLES)
 
 if ADT_SAMPLES:
     ADT_SAMPLES = [re.sub(" ", "", x) for x in ADT_SAMPLES]
     SAMPLES     = [re.sub(",", "_", x) for x in ADT_SAMPLES]
     ADT_REF     = _check_path(ADT_REF)
     ALL_SAMPLES = ALL_SAMPLES + SAMPLES
+    N_SAMPLES   = len(ADT_SAMPLES)
 
     if RNA_SAMPLES:
-        SAMPLES = [x + "-" + y for x, y in zip(RNA_SAMPLES, SAMPLES)]
+        SAMPLES   = [x + "-" + y for x, y in zip(RNA_SAMPLES, SAMPLES)]
+        N_SAMPLES = max(N_SAMPLES, len(RNA_SAMPLES))
 
 if VDJ_SAMPLES:
     VDJ_SAMPLES = [x.strip() for x in VDJ_SAMPLES]
     VDJ_REF     = _check_path(VDJ_REF)
     ALL_SAMPLES = ALL_SAMPLES + VDJ_SAMPLES
+    N_SAMPLES   = N_SAMPLES + len(VDJ_SAMPLES)
 
-# Check directory/file paths
-RAW_DATA = [_check_path(x) for x in RAW_DATA]
-RESULTS  = _check_path(RESULTS)
+# Set thread count
+N_THREADS   = multiprocessing.cpu_count() - 2
+JOB_THREADS = int(N_THREADS / N_SAMPLES)
 
 # Final output files
 rule all:
@@ -105,7 +115,7 @@ rule all:
             results = RESULTS
         )
 
-include: "src/rules/cellranger.snake"
+include: SRC + "/cellranger.snake"
 
 
 
