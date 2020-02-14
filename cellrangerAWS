@@ -8,7 +8,7 @@ INPUT="none"
 S3="none"
 CONFIG="none"
 KEY="none"
-FORCE_CLEAN=false
+FORCE_CLEAN=true
 
 
 # Defaults
@@ -27,16 +27,16 @@ USAGE
 "$0" [OPTIONS]
 
 OPTIONS
--h, display this message.
--i, path to local directory containing fastq files, if this option is omitted files in the S3 bucket are used.
--s, name of an S3 bucket (starting with \"s3://\").
--c, path to config.yaml.
--k, path to an AWS private key.
+-h, display this message
+-i, path to local directory containing fastq files, if this option is omitted files in the S3 bucket are used
+-s, name of an S3 bucket
+-c, path to config.yaml
+-k, path to an AWS private key
 
--t, EC2 instance type (default is "$EC2_TYPE").
--a, ID for machine image configured to run cellranger (default is "$AMI").
--f, terminate running instances and start a new job.
--m, run in manual mode, this transfers data to an EC2 instance and exits.
+-t, EC2 instance type (default is "$EC2_TYPE")
+-a, ID for machine image configured to run cellranger (default is "$AMI")
+-f, terminate running instances and start a new job
+-m, run in manual mode, this transfers data to an EC2 instance and exits
     """
 }
 
@@ -54,7 +54,7 @@ do
             exit 0
             ;;
         i) INPUT="$OPTARG" ;;
-        s) S3="$OPTARG" ;;
+        s) S3="s3://$OPTARG" ;;
         c) CONFIG="$OPTARG" ;;
         k) KEY="$OPTARG" ;;
         t) EC2_TYPE="$OPTARG" ;;
@@ -144,7 +144,6 @@ terminated_ec2() {
 # Check for running EC2 instances ==============================================
 
 check_for_ec2() {
-
     local running_ec2s=$(
         aws ec2 describe-instances \
             --filters Name=instance-state-name,Values=running
@@ -164,7 +163,7 @@ check_for_ec2() {
             terminate_ec2 "$ec2_ids"
 	
 	else
-            echo -e "\n$(get_time) ERROR: An EC2 instance from a previous job is still running, to terminate this instance and start a new job, include the -f option."
+            echo -e "\n$(get_time) ERROR: EC2 instances from previous jobs are still running, to terminate these instances and start a new job include the -f option."
 
 	    exit 1
         fi
@@ -212,7 +211,6 @@ launch_ec2() {
 
     echo -e "\n$(get_time) Launching EC2 $ec2_type instance..."
 
-
     # Get total size of fastqs in S3 bucket
     local data_size=$(
         aws s3 ls "$s3" --summarize --human-readable \
@@ -238,7 +236,6 @@ launch_ec2() {
             | grep -B 1 "Ebs" \
             | grep -E -o "/dev/[[:alnum:]]+"
     )
-
 
     # Launch EC2 instance
     # Public DNS is not listed in run-instances output, this must be retrieved
@@ -268,7 +265,6 @@ launch_ec2() {
 get_dns() {
     local ec2="$1"
 
-
     # Retrieve public IP to check connectivity
     local ip=$(
         aws ec2 describe-instances \
@@ -276,7 +272,6 @@ get_dns() {
             | grep -E "PublicIpAddress" \
             | grep -E -o "[0-9\.]+"
     )
-
 
     # Ping IP
     for i in $(seq 1 20)
@@ -310,7 +305,6 @@ get_dns() {
         fi
     done
 
-
     # If IP does not respond to ping, terminate instance
     echo -e "\n$(get_time) ERROR: Unable to contact EC2 instance $ec2."
 
@@ -327,7 +321,6 @@ get_dns() {
 
 transfer_to_ec2() {
     local s3="$1"
-
 
     # Configure AWS on EC2 instance
     local iam_id=$(
@@ -351,7 +344,6 @@ transfer_to_ec2() {
 
     ssh -i "$KEY" "$EC2_SSH" \
         "$aws" configure set aws_secret_access_key "$iam_key"
-
 
     # Transfer files to EC2 instance
     local s3_fqs=$(
@@ -397,7 +389,7 @@ run_cellranger() {
     echo -e "\n$(get_time) Cell Ranger run has completed, transferring results to S3 bucket $s3."
     
     ssh -i "$KEY" "$EC2_SSH" \
-        "$aws" s3 cp "~/RESULTS" "$s3/RESULTS" --recursive
+        "$aws" s3 cp --recursive "~/RESULTS" "$s3/RESULTS"
 }
 
 
@@ -409,7 +401,7 @@ run_cellranger() {
 terminate_ec2() {
     local ec2="$1"
 
-    echo -e "\n$(get_time) Terminating EC2 instance "$ec2"..."
+    echo -e "\n$(get_time) Terminating EC2 instances "$ec2"..."
 
     aws ec2 terminate-instances \
         --instance-ids $ec2 \
@@ -418,23 +410,21 @@ terminate_ec2() {
     check_status terminated_ec2 "$ec2" 
 	
     # Keep this quoting pattern so multiple IDs are displayed on one line
-    echo -e "\n$(get_time) EC2 instance "$ec2" has been terminated."   
+    echo -e "\n$(get_time) EC2 instances "$ec2" have been terminated."
 }
 
 
 
 
 
-# Main function ================================================================
+# Main =========================================================================
 
 main() {
-  
     # Terminate instances/volumes from previous runs
     if "$FORCE_CLEAN"
     then
         check_for_ec2
     fi
-
 
     # Transfer data to S3 bucket
     if "$TRANSFER_DATA"
@@ -444,7 +434,6 @@ main() {
             "$S3"
     fi
 
-
     # Launch EC2 instance and retrieve ec2_id
     launch_ec2 \
         "$S3" \
@@ -452,10 +441,8 @@ main() {
         "$EC2_TYPE" \
         "$ZONE"
 
-
     # Check EC2 instance connectivity and retrieve EC2_SSH
     get_dns "$ec2_id"
-
 
     # Transfer data from S3 bucket to EC2 instance
     transfer_to_ec2 "$S3" 
@@ -465,10 +452,8 @@ main() {
         exit 0
     fi
 
-
     # Run Cell Ranger
     run_cellranger "$S3"
-
 
     # Terminate EC2 instance
     terminate_ec2 "$ec2_id"
