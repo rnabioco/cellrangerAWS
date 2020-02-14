@@ -390,6 +390,9 @@ run_cellranger() {
     
     ssh -i "$KEY" "$EC2_SSH" \
         "$aws" s3 cp --recursive "~/RESULTS" "$s3/RESULTS"
+
+    ssh -i "$KEY" "$EC2_SSH" \
+        "$aws" s3 cp --recursive "~/PIPELINE" "$s3/PIPELINE"
 }
 
 
