@@ -21,15 +21,14 @@ def _check_path(path):
 # Paths
 HOME       = os.path.expanduser("~")
 CELLRANGER = HOME + "/cellranger-3.1.0/cellranger"
-RAW_DATA   = HOME + "/DATA"
-RESULTS    = HOME + "/RESULTS"
-SRC        = HOME + "/PIPELINE"
-ADT_REF    = SRC + "/ref/Totalseq-Barcode-Sequence-NoGeneID.csv"
+RAW_DATA   = HOME + "/DATA/"
+RESULTS    = HOME + "/RESULTS/"
+REF        = HOME + "/REF/"
+ADT_REF    = REF + "/Totalseq-Barcode-Sequence-NoGeneID.csv"
 
 CELLRANGER = _check_path(CELLRANGER)
 RAW_DATA   = _check_path(RAW_DATA)
 RESULTS    = _check_path(RESULTS)
-SRC        = _check_path(SRC)
 ADT_REF    = _check_path(ADT_REF)
 
 # Parameters from config.yaml
@@ -56,11 +55,11 @@ REFERENCES = {
 }
 
 RNA_REF = REFERENCES[GENOME]["RNA_REF"]
-RNA_REF = SRC + "/ref/" + RNA_REF
+RNA_REF = REF + RNA_REF
 RNA_REF = _check_path(RNA_REF)
 
 VDJ_REF = REFERENCES[GENOME]["VDJ_REF"]
-VDJ_REF = SRC + "/ref/" + VDJ_REF
+VDJ_REF = REF + VDJ_REF
 VDJ_REF = _check_path(VDJ_REF)
 
 # Set sample/group names
@@ -115,7 +114,7 @@ rule all:
             results = RESULTS
         )
 
-include: SRC + "/cellranger.snake"
+include: HOME + "/PIPELINE/cellranger.snake"
 
 
 
