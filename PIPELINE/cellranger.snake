@@ -157,7 +157,6 @@ rule create_sample_csv:
         results  = RESULTS,
         raw_data = RAW_DATA,
         fq_regex = FASTQ_REGEX,
-        all_sams = ALL_SAMPLES,
         rna      = RNA_SAMPLES,
         adt      = ADT_SAMPLES
     log:
@@ -174,14 +173,6 @@ rule create_sample_csv:
             # Trim fastq names
             R1_fqs = [os.path.basename(x) for x in R1_fqs]
             R1_fqs = [re.sub(params.fq_regex, "", x) for x in R1_fqs]
-
-            # Check for fastqs that match other samples
-            all_sams = params.all_sams
-            all_sams.remove(sam_name)
-            other_re = ["^" + x + ".+" for x in all_sams]
-            other_re = "|".join(other_re)
-            R1_fqs   = [x for x in R1_fqs if not re.search(other_re, x)]
-            R1_fqs   = set(R1_fqs)
 
             # Create sample csv
             if not os.path.isfile(sam_csv):

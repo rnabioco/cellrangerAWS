@@ -65,19 +65,15 @@ VDJ_REF = _check_path(VDJ_REF)
 # Set sample/group names
 FASTQ_REGEX = "_S[0-9]+_L[0-9]+_R[12]_[0-9]+\.fastq\.gz"
 
-ALL_SAMPLES = []
-
 if RNA_SAMPLES:
     RNA_SAMPLES = [x.strip() for x in RNA_SAMPLES]
     SAMPLES     = RNA_SAMPLES
-    ALL_SAMPLES = ALL_SAMPLES + SAMPLES
     N_SAMPLES   = len(RNA_SAMPLES)
 
 if ADT_SAMPLES:
     ADT_SAMPLES = [re.sub(" ", "", x) for x in ADT_SAMPLES]
     SAMPLES     = [re.sub(",", "_", x) for x in ADT_SAMPLES]
     ADT_REF     = _check_path(ADT_REF)
-    ALL_SAMPLES = ALL_SAMPLES + SAMPLES
     N_SAMPLES   = len(ADT_SAMPLES)
 
     if RNA_SAMPLES:
@@ -87,7 +83,6 @@ if ADT_SAMPLES:
 if VDJ_SAMPLES:
     VDJ_SAMPLES = [x.strip() for x in VDJ_SAMPLES]
     VDJ_REF     = _check_path(VDJ_REF)
-    ALL_SAMPLES = ALL_SAMPLES + VDJ_SAMPLES
     N_SAMPLES   = N_SAMPLES + len(VDJ_SAMPLES)
 
 # Set thread count
