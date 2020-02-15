@@ -355,7 +355,7 @@ transfer_to_ec2() {
     echo -e "\n$(get_time) Transferring the following files from S3 bucket $s3 to EC2 instance:"
     echo "$s3_fqs"
 
-    scp -i "$KEY" "$CONFIG" "$EC2_SSH:~/" \
+    scp -i "$KEY" "$CONFIG" "$EC2_SSH:~/PIPELINE" \
         > /dev/null
 
     # Leave s3_fqs unquoted

@@ -12,7 +12,7 @@ mkdir -p "$log_dir"
 
 "$snakemake" \
     --snakefile "$pipeline/Snakefile" \
-    --configfile "$HOME/config.yaml" \
+    --configfile "$pipeline/config.yaml" \
     --cores "$threads" \
     --latency-wait 60 \
     > "$log_dir/cellranger.out" \
