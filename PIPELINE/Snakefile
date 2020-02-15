@@ -103,10 +103,6 @@ rule all:
         expand(
             "{results}/logs/{vdj_sample}_vdj.out",
             results = RESULTS, vdj_sample = VDJ_SAMPLES
-        ),
-        expand(
-            "{results}/count_metrics.csv",
-            results = RESULTS
         )
 
 include: HOME + "/PIPELINE/cellranger.snake"

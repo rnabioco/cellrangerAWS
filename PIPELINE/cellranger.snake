@@ -270,42 +270,6 @@ rule cellranger_count:
 
 
 
-# Create cellranger count summary ==============================================
-# This rule combines the metrics_summary.csv files from each run
-
-rule count_metrics:
-    input:
-        expand(
-            "{results}/logs/{sample}_count.out",
-            results = RESULTS, sample = SAMPLES
-        )
-    output:
-        "{results}/count_metrics.csv"
-    params:
-        job_name = "count_metrics",
-        memory   = "select[mem>4] rusage[mem=4]",
-        results  = RESULTS,
-        samples  = SAMPLES
-    log:
-        "{results}/logs/count_metrics"
-    threads:
-        1
-    shell:
-        """
-        sams=({params.samples})
-
-        head -1 ${{sams[0]}} \
-            > {output}
-
-        for sam in ${{sams[@]}}
-        do
-            tail -1 {params.results}/$sam/outs/metrics_summary.csv \
-                >> {output}
-        done
-        """
-
-
-
 # Run cellranger vdj ===========================================================
 # This rule generates IDs for VDJ fastqs and runs cellranger vdj.
 
