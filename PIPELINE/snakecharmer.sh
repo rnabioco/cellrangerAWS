@@ -1,37 +1,20 @@
-#! /usr/bin/env bash
+#! /bin/bash
 
-#BSUB -J cellranger
-#BSUB -o logs/cellranger_%J.out
-#BSUB -e logs/cellranger_%J.err
-#BSUB -R "select[mem>4] rusage[mem=4]" 
-#BSUB -q rna
+snakemake="$HOME/.local/bin/snakemake"
+res_dir="$HOME/RESULTS"
+log_dir="$res_dir/logs"
+pipeline="$HOME/PIPELINE"
+threads=$(grep -c "^processor" /proc/cpuinfo)
+threads=$(expr "$threads" - 2)
 
-set -o nounset -o pipefail -o errexit -x
-
-mkdir -p logs
+mkdir -p "$log_dir"
 
 
-# Function to run snakemake
-run_snakemake() {
-    local num_jobs=$1
-    local config_file=$2
-    
-    drmaa_args='
-        -o {log}.out 
-        -e {log}.err 
-        -J {params.job_name} 
-        -R "{params.memory} span[hosts=1] " 
-        -n {threads} '
-
-    snakemake \
-        --snakefile Snakefile \
-        --drmaa "$drmaa_args" \
-        --jobs $num_jobs \
-        --latency-wait 60 \
-        --rerun-incomplete \
-        --configfile $config_file
-}
-
-run_snakemake 50 config.yaml
-
+"$snakemake" \
+    --snakefile "$pipeline/Snakefile" \
+    --configfile "$HOME/config.yaml" \
+    --cores "$threads" \
+    --latency-wait 60 \
+    > "$log_dir/cellranger.out" \
+    2>&1
 

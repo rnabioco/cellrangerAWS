@@ -8,7 +8,7 @@ INPUT="none"
 S3="none"
 CONFIG="none"
 KEY="none"
-FORCE_CLEAN=true
+FORCE_CLEAN=false
 
 
 # Defaults
