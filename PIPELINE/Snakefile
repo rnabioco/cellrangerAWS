@@ -7,6 +7,7 @@ shell.prefix("set -o nounset -o pipefail -o errexit -x; ")
 import multiprocessing
 import subprocess
 import shutil
+import psutil
 import glob
 import os 
 import re
@@ -18,7 +19,7 @@ def _check_path(path):
     else:
         sys.exit("ERROR: " + path + " does not exist.")
 
-# Paths
+# Directories
 HOME       = os.path.expanduser("~")
 CELLRANGER = HOME + "/cellranger-3.1.0/cellranger"
 RAW_DATA   = HOME + "/DATA/"
@@ -62,7 +63,7 @@ VDJ_REF = REFERENCES[GENOME]["VDJ_REF"]
 VDJ_REF = REF + VDJ_REF
 VDJ_REF = _check_path(VDJ_REF)
 
-# Set sample/group names
+# Set sample names
 FASTQ_REGEX = "_S[0-9]+_L[0-9]+_R[12]_[0-9]+\.fastq\.gz"
 
 if RNA_SAMPLES:
@@ -85,9 +86,11 @@ if VDJ_SAMPLES:
     VDJ_REF     = _check_path(VDJ_REF)
     N_SAMPLES   = N_SAMPLES + len(VDJ_SAMPLES)
 
-# Set thread count
+# Set job resources
 N_THREADS   = multiprocessing.cpu_count() - 2
 JOB_THREADS = int(N_THREADS / N_SAMPLES)
+TOTAL_MEM   = psutil.virtual_memory().total / 1000000000 - 8
+JOB_MEM     = int(TOTAL_MEM / N_SAMPLES)
 
 # Final output files
 rule all:
