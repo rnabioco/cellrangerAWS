@@ -16,7 +16,7 @@ MANUAL_MODE=false
 CLEAN_UP=false
 TRANSFER_DATA=true
 EC2_TYPE="c5.12xlarge"
-AMI="ami-04d21809426efb385"
+AMI="ami-0b8a92bc8a796c237"
 ZONE="us-west-2a"
 
 
@@ -298,7 +298,7 @@ get_dns() {
 
             sleep 10
 
-            echo -e "\n$(get_time) Contact has been made with EC2 instance $ec2, use the following command to manually connect:"
+            echo -e "\n$(get_time) EC2 instance $ec2 is online, use the following command to manually connect:"
             echo -e "ssh -i $KEY $EC2_SSH\n"
 
             return 0
