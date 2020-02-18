@@ -42,11 +42,11 @@ VDJ_SAMPLES = config["VDJ_SAMPLES"]
 # Genome references
 REFERENCES = {
     "GRCh38" : {
-        "RNA_REF" : "GRCh38",
+        "RNA_REF" : "refdata-cellranger-GRCh38-3.0.0",
         "VDJ_REF" : "refdata-cellranger-vdj-GRCh38-alts-ensembl-3.1.0"
     },
     "GRCm38" : {
-        "RNA_REF" : "",
+        "RNA_REF" : "refdata-cellranger-mm10-3.0.0",
         "VDJ_REF" : "refdata-cellranger-vdj-GRCm38-alts-ensembl-3.1.0"
     },
     "tiny" : {
