@@ -337,7 +337,7 @@ transfer_to_ec2() {
             | grep -E -o "[[:alnum:]/\+]+$"
     )
 
-    local aws="~/.local/bin/aws"
+    local aws="/usr/local/bin/aws"
 
     ssh -o "StrictHostKeyChecking no" -i "$KEY" "$EC2_SSH" \
         "$aws" configure set aws_access_key_id "$iam_id"
