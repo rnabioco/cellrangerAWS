@@ -16,7 +16,7 @@ MANUAL_MODE=false
 CLEAN_UP=false
 TRANSFER_DATA=true
 EC2_TYPE="c5.12xlarge"
-AMI="ami-05e958ee12d1118d6"
+AMI="ami-0f5b32cba015dcccd"
 ZONE="us-west-2a"
 
 
