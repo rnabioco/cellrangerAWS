@@ -379,7 +379,7 @@ transfer_to_ec2() {
 run_cellranger() {
     local s3="$1"
 
-    aws="~/.local/bin/aws"
+    aws="/usr/local/bin/aws"
 
     echo -e "\n$(get_time) Beginning Cell Ranger run..."
 
