@@ -398,7 +398,7 @@ EOF
         "bash ~/PIPELINE/snakecharmer.sh &"
 
     # Check for completed Cell Ranger run
-    for i in $(seq 1 36)
+    for i in $(seq 1 24)
     do
         ec2_files=$(ssh -i "$KEY" "$EC2_SSH" "dir ~/")
 
@@ -411,13 +411,11 @@ EOF
 	    return 0
 	fi
 
-        sleep 1m
+        sleep 1h
     done
 
-    # If run does not complete in 24h throw error and exit
-    echo -e "\n$(get_time) ERROR: Cell Ranger run has not completed in 36 hours."
-
-    exit 1
+    # If run does not complete within 24 hours throw error
+    echo -e "\n$(get_time) ERROR: Cell Ranger run did not complete within 24 hours."
 }
 
 
