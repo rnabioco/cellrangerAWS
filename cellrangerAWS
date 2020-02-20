@@ -387,16 +387,37 @@ run_cellranger() {
 
     echo -e "\n$(get_time) Beginning Cell Ranger run..."
 
-    ssh -i "$KEY" "$EC2_SSH" \
-        bash "~/PIPELINE/snakecharmer.sh"
+    # Add AWS commands to transfer results to S3 bucket
+    ssh -i "$KEY" "$EC2_SSH" bash <<EOF
+        echo -e "\n$aws s3 cp --recursive ~/RESULTS $s3/RESULTS" >> ~/PIPELINE/snakecharmer.sh
+        echo -e "\n$aws s3 cp --recursive ~/PIPELINE $s3/PIPELINE" >> ~/PIPELINE/snakecharmer.sh
+        echo -e "\ntouch ~/COMPLETE" >> ~/PIPELINE/snakecharmer.sh
+EOF
 
-    echo -e "\n$(get_time) Cell Ranger run has completed, transferring results to S3 bucket $s3."
-    
-    ssh -i "$KEY" "$EC2_SSH" \
-        "$aws" s3 cp --recursive "~/RESULTS" "$s3/RESULTS"
+    ssh -f -i "$KEY" "$EC2_SSH" \
+        "bash ~/PIPELINE/snakecharmer.sh &"
 
-    ssh -i "$KEY" "$EC2_SSH" \
-        "$aws" s3 cp --recursive "~/PIPELINE" "$s3/PIPELINE"
+    # Check for completed Cell Ranger run
+    for i in $(seq 1 36)
+    do
+        ec2_files=$(ssh -i "$KEY" "$EC2_SSH" "dir ~/")
+
+	echo -e "\n$(get_time) Checking for completed Cell Ranger run..."
+
+	if [[ "$ec2_files" =~ "COMPLETE" ]]
+        then
+            echo -e "\n$(get_time) Cell Ranger run has completed, check $s3 for results."
+
+	    return 0
+	fi
+
+        sleep 1m
+    done
+
+    # If run does not complete in 24h throw error and exit
+    echo -e "\n$(get_time) ERROR: Cell Ranger run has not completed in 36 hours."
+
+    exit 1
 }
 
 
