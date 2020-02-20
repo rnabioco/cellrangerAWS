@@ -16,7 +16,7 @@ MANUAL_MODE=false
 CLEAN_UP=false
 TRANSFER_DATA=true
 EC2_TYPE="c5.12xlarge"
-AMI="ami-0c263cb10eeac51b6"
+AMI="ami-030627e4bf9c3c41b"
 ZONE="us-west-2a"
 
 
@@ -244,7 +244,7 @@ launch_ec2() {
     # Launch EC2 instance
     # Public DNS is not listed in run-instances output, this must be retrieved
     # separately
-    ec2_id=$(
+    EC2=$(
         aws ec2 run-instances \
             --instance-type "$ec2_type" \
             --image-id "$ami" \
@@ -255,9 +255,9 @@ launch_ec2() {
             | grep -E -o "i\-[[:alnum:]]+"
     )
 
-    check_status running_ec2 "$ec2_id"
+    check_status running_ec2 "$EC2"
 
-    echo -e "\n$(get_time) EC2 instance $ec2_id is running."
+    echo -e "\n$(get_time) EC2 instance $EC2 is running."
 }
 
 
@@ -321,10 +321,11 @@ get_dns() {
 
 
 
-# Transfer data from S3 bucket to EBS volume ==================================
+# Transfer data from S3 bucket to EC2 instance =================================
 
 transfer_to_ec2() {
     local s3="$1"
+    local ec2_ssh="$2"
 
     # Configure AWS on EC2 instance
     local iam_id=$(
@@ -343,10 +344,10 @@ transfer_to_ec2() {
 
     local aws="/usr/local/bin/aws"
 
-    ssh -o "StrictHostKeyChecking no" -i "$KEY" "$EC2_SSH" \
+    ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ec2_ssh" \
         "$aws" configure set aws_access_key_id "$iam_id"
 
-    ssh -i "$KEY" "$EC2_SSH" \
+    ssh -i "$KEY" "$ec2_ssh" \
         "$aws" configure set aws_secret_access_key "$iam_key"
 
     # Transfer files to EC2 instance
@@ -358,13 +359,13 @@ transfer_to_ec2() {
     echo -e "\n$(get_time) Transferring the following files from $s3 to EC2 instance:"
     echo "$s3_fqs"
 
-    scp -i "$KEY" "$CONFIG" "$EC2_SSH:~/PIPELINE" \
+    scp -i "$KEY" "$CONFIG" "$ec2_ssh:~/PIPELINE" \
         > /dev/null
 
     # Leave s3_fqs unquoted
     for fq in $s3_fqs
     do 
-        ssh -i "$KEY" "$EC2_SSH" \
+        ssh -i "$KEY" "$ec2_ssh" \
             "$aws" s3 cp "$s3/$fq" "~/DATA" \
             > /dev/null
     done
@@ -382,40 +383,24 @@ transfer_to_ec2() {
 
 run_cellranger() {
     local s3="$1"
+    local ec2="$2"
+    local ec2_ssh="$3"
 
     aws="/usr/local/bin/aws"
 
     echo -e "\n$(get_time) Beginning Cell Ranger run..."
 
-    # Add AWS commands to transfer results to S3 bucket
-    ssh -i "$KEY" "$EC2_SSH" bash <<EOF
-        echo -e "\n$aws s3 cp --recursive ~/RESULTS $s3/RESULTS" >> ~/PIPELINE/snakecharmer.sh
-        echo -e "\n$aws s3 cp --recursive ~/PIPELINE $s3/PIPELINE" >> ~/PIPELINE/snakecharmer.sh
-        echo -e "\ntouch ~/COMPLETE" >> ~/PIPELINE/snakecharmer.sh
-EOF
+    # Add S3 bucket and EC2 instance ID to snakecharmer.sh
+    # Do not use "/" as sed delimiter since these are present in the bucket name
+    ssh -i "$KEY" "$ec2_ssh" \
+        "sed -i s#BUCKET#$s3#g ~/PIPELINE/snakecharmer.sh"
 
-    ssh -f -i "$KEY" "$EC2_SSH" \
-        "bash ~/PIPELINE/snakecharmer.sh &"
+    ssh -i "$KEY" "$ec2_ssh" \
+        "sed -i s/INSTANCE/$ec2/g ~/PIPELINE/snakecharmer.sh"
 
-    # Check for completed Cell Ranger run
-    for i in $(seq 1 24)
-    do
-        ec2_files=$(ssh -i "$KEY" "$EC2_SSH" "dir ~/")
-
-	echo -e "\n$(get_time) Checking for completed Cell Ranger run..."
-
-	if [[ "$ec2_files" =~ "COMPLETE" ]]
-        then
-            echo -e "\n$(get_time) Cell Ranger run has completed, check $s3 for results."
-
-	    return 0
-	fi
-
-        sleep 1h
-    done
-
-    # If run does not complete within 24 hours throw error
-    echo -e "\n$(get_time) ERROR: Cell Ranger run did not complete within 24 hours."
+    # Run Cell Ranger
+    ssh -f -i "$KEY" "$ec2_ssh" \
+        "~/PIPELINE/snakecharmer.sh &"
 }
 
 
@@ -454,7 +439,8 @@ main() {
     then
         transfer_to_s3 \
             "$INPUT" \
-            "$S3"
+            "$S3" \
+	    "$EC2_SSH"
     fi
 
     # Launch EC2 instance and retrieve ec2_id
@@ -465,10 +451,12 @@ main() {
         "$ZONE"
 
     # Check EC2 instance connectivity and retrieve EC2_SSH
-    get_dns "$ec2_id"
+    get_dns "$EC2"
 
     # Transfer data from S3 bucket to EC2 instance
-    transfer_to_ec2 "$S3" 
+    transfer_to_ec2 \
+        "$S3" \
+        "$EC2_SSH"
 
     if "$MANUAL_MODE"
     then
@@ -476,15 +464,12 @@ main() {
     fi
 
     # Run Cell Ranger
-    run_cellranger "$S3"
-
-    # Terminate EC2 instance
-    terminate_ec2 "$ec2_id"
+    run_cellranger \
+        "$S3" \
+        "$EC2" \
+	"$EC2_SSH"
 }
 
 main
-
-
-
 
 
