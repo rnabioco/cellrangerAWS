@@ -31,7 +31,7 @@ OPTIONS
 -i, path to local directory containing fastq files, if this option is omitted files in the S3 bucket are used
 -s, name of an S3 bucket
 -c, path to config.yaml
--k, path to an AWS private key
+-k, path to an ssh key linked to AWS account
 
 -t, EC2 instance type (default is "$EC2_TYPE")
 -a, ID for machine image configured to run cellranger (default is "$AMI")
