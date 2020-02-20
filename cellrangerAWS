@@ -162,10 +162,14 @@ check_for_ec2() {
         then
             terminate_ec2 "$ec2_ids"
 	
-	else
+        elif "$FORCE_CLEAN"
+        then
             echo -e "\n$(get_time) ERROR: EC2 instances from previous jobs are still running, to terminate these instances and start a new job include the -f option."
 
 	    exit 1
+
+	else
+            echo -e "\n$(get_time) WARNING: EC2 instances from previous jobs are still running, to terminate these instances include the -f option."
         fi
     fi
 }
@@ -399,7 +403,7 @@ run_cellranger() {
 
 
 
-# Terminate EC2 instance and delete EBS volume =================================
+# Terminate EC2 instance =======================================================
 
 terminate_ec2() {
     local ec2="$1"
@@ -423,11 +427,8 @@ terminate_ec2() {
 # Main =========================================================================
 
 main() {
-    # Terminate instances/volumes from previous runs
-    if "$FORCE_CLEAN"
-    then
-        check_for_ec2
-    fi
+    # Terminate instances from previous runs
+    check_for_ec2
 
     # Transfer data to S3 bucket
     if "$TRANSFER_DATA"

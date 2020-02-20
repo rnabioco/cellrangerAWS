@@ -87,9 +87,9 @@ if VDJ_SAMPLES:
     N_SAMPLES   = N_SAMPLES + len(VDJ_SAMPLES)
 
 # Set job resources
-N_THREADS   = multiprocessing.cpu_count() - 2
+N_THREADS   = multiprocessing.cpu_count() * 0.9
 JOB_THREADS = int(N_THREADS / N_SAMPLES)
-TOTAL_MEM   = psutil.virtual_memory().total / 1000000000 - 8
+TOTAL_MEM   = psutil.virtual_memory().total / 1000000000 * 0.9
 JOB_MEM     = int(TOTAL_MEM / N_SAMPLES)
 
 # Final output files
