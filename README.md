@@ -15,20 +15,20 @@ card. When launching any EC2 instance, you will be charged for the total time
 the instance is running, regardless of use. Please carefully review the 
 following pricing guides:
 
-* Simple Storage Service, S3 (https://aws.amazon.com/s3/pricing/)
+* Simple Storage Service, [S3](https://aws.amazon.com/s3/pricing/)
 
-* Elastic Compute Cloud, EC2 (https://aws.amazon.com/ec2/pricing/on-demand/)
+* Elastic Compute Cloud, [EC2](https://aws.amazon.com/ec2/pricing/on-demand/)
 
 ### AWS Documentation
 
 This tutorial will require you to interact with several AWS portals. Please
 review the basic documentation for the following portals:
 
-* Simple Storage Service, S3 (https://docs.aws.amazon.com/AmazonS3/latest/gsg/GetStartedWithS3.html)
+* Simple Storage Service, [S3](https://docs.aws.amazon.com/AmazonS3/latest/gsg/GetStartedWithS3.html)
 
-* Elastic Compute Cloud, EC2 (https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/concepts.html)
+* Elastic Compute Cloud, [EC2](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/concepts.html)
 
-* Identity and Access Management, IAM (https://docs.aws.amazon.com/IAM/latest/UserGuide/introduction.html)
+* Identity and Access Management, [IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/introduction.html)
 
 ### Configuring your AWS account
 
@@ -36,10 +36,9 @@ The cellrangerAWS tool requires that you install the AWS command line interface
 and configure your account to provide access to AWS resources. To configure your
 account, follow these steps:
 
-1. Create an AWS account (https://aws.amazon.com/console/).
+1. Create an AWS account [here](https://aws.amazon.com/console/).
 
-2. Download and install the AWS command line interface, version 2
-(https://aws.amazon.com/cli/).
+2. Download and install the AWS command line interface, version 2 [here](https://aws.amazon.com/cli/).
 
 3. To allow the AWS CLI to issue commands to your AWS account, an access key
 must be created using the IAM portal. Once your key has been generated run the
@@ -108,16 +107,12 @@ requires the following arguments:
 
 	-t, the type of EC2 instance you want to use
 
-To run the test data, download the "tiny" fastq files from [here](https://github.com/rnabioco/cellrangerAWS/tree/master/DATA/tiny_data)
+To run the test data, download the "tiny" fastq files [here](https://github.com/rnabioco/cellrangerAWS/tree/master/DATA/tiny_data)
 and transfer to an S3 bucket. Here are example commands to run the test data
 on a c5.12xlarge instance using an S3 bucket named "my-s3-bucket":
 
 ``` bash
 cellrangerAWS -s my-s3-bucket -c config.yaml -k ~/.ssh/mykeys.pem -t c5.12xlarge
 ```
-
-
-
-
 
 
