@@ -168,6 +168,24 @@ check_for_ec2() {
 }
 
 
+# Terminate instance ===========================================================
+
+terminate_ec2() {
+    local ec2="$1"
+
+    echo -e "\n$(get_time) Terminating EC2 instances "$ec2"..."
+
+    aws ec2 terminate-instances \
+        --instance-ids $ec2 \
+        > /dev/null
+
+    check_status terminated_ec2 "$ec2" 
+	
+    # Keep this quoting pattern so multiple IDs are displayed on one line
+    echo -e "\n$(get_time) EC2 instances "$ec2" have been terminated."
+}
+
+
 # Transfer data to bucket ======================================================
 
 transfer_to_s3() {
@@ -176,7 +194,7 @@ transfer_to_s3() {
 
     local local_fqs=$(ls "$input/"*.fastq.gz)
 
-    echo -e "\n$(get_time) Transferring the following files to S3 bucket $s3:"
+    echo -e "\n$(get_time) Transferring the following files to $s3:"
     echo "$local_fqs"
 
     for fq in $local_fqs
@@ -361,40 +379,24 @@ run_cellranger() {
     local s3="$1"
     local ec2="$2"
     local ec2_ssh="$3"
+    local yaml="$4"
 
-    aws="/usr/local/bin/aws"
+    local aws="/usr/local/bin/aws"
+    local yaml=$(basename "$yaml")
 
     echo -e "\n$(get_time) Beginning Cell Ranger run..."
 
     # Add S3 bucket and EC2 instance ID to snakecharmer.sh
     # Do not use "/" as sed delimiter since these are present in the bucket name
-    ssh -i "$KEY" "$ec2_ssh" \
+    ssh -i "$KEY" "$ec2_ssh" bash <<EOF
         "sed -i s#BUCKET#$s3#g ~/PIPELINE/snakecharmer.sh"
-
-    ssh -i "$KEY" "$ec2_ssh" \
         "sed -i s/INSTANCE/$ec2/g ~/PIPELINE/snakecharmer.sh"
-
+        "sed -i s/CONFIG/$yaml/g ~/PIPELINE/snakecharmer.sh"
+EOF
+    
     # Run Cell Ranger
     ssh -f -i "$KEY" "$ec2_ssh" \
         "~/PIPELINE/snakecharmer.sh &"
-}
-
-
-# Terminate instance ===========================================================
-
-terminate_ec2() {
-    local ec2="$1"
-
-    echo -e "\n$(get_time) Terminating EC2 instances "$ec2"..."
-
-    aws ec2 terminate-instances \
-        --instance-ids $ec2 \
-        > /dev/null
-
-    check_status terminated_ec2 "$ec2" 
-	
-    # Keep this quoting pattern so multiple IDs are displayed on one line
-    echo -e "\n$(get_time) EC2 instances "$ec2" have been terminated."
 }
 
 
@@ -437,7 +439,8 @@ main() {
     run_cellranger \
         "$S3" \
         "$EC2" \
-	"$EC2_SSH"
+	"$EC2_SSH" \
+	"$CONFIG"
 }
 
 main
