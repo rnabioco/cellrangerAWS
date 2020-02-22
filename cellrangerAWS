@@ -14,7 +14,7 @@ FORCE_CLEAN=false
 MANUAL_MODE=false
 CLEAN_UP=false
 TRANSFER_DATA=true
-AMI="ami-0b9988dd2db6ea4c2"
+AMI="ami-0b67d5a208a5ff22d"
 ZONE="us-west-2a"
 
 # Usage message
@@ -381,8 +381,6 @@ run_cellranger() {
     local aws="/usr/local/bin/aws"
     local yaml=$(basename "$yaml")
 
-    echo -e "\n$(get_time) Beginning Cell Ranger run..."
-
     # Add S3 bucket and EC2 instance ID to snakecharmer.sh
     # Do not use "/" as sed delimiter since these are present in the bucket name
     ssh -i "$KEY" "$ec2_ssh" bash <<EOF
@@ -394,6 +392,8 @@ EOF
     # Run Cell Ranger
     ssh -f -i "$KEY" "$ec2_ssh" \
         "~/PIPELINE/snakecharmer.sh &"
+
+    echo -e "\n$(get_time) Beginning Cell Ranger run..."
 }
 
 

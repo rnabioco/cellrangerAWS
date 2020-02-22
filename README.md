@@ -90,18 +90,18 @@ take several hours.
 
 2. The snakemake pipeline that runs on the instance requires a configuration
 file specifying the genome and the sample names. The sample name should be the
-fastq file prefix that is shared by all files generated for that capture. For
-gene expression data there should be eight separate fastq files that are
-generated for each sample and share the same prefix. In the config file, the
-sample names must be listed with one name per line. A sample config file to run
-the test data (tiny) provided by 10x genomics can be downloaded [here](https://github.com/rnabioco/cellrangerAWS/raw/master/PIPELINE/config.yaml).
+fastq file prefix that is shared by all files generated for the capture. For
+gene expression data there should be eight separate fastq files that share the 
+same prefix. In the config file, the sample names must be listed with one name
+per line. A template config file that can be used to run the test data (tiny) 
+provided by 10x genomics can be downloaded [here](https://github.com/rnabioco/cellrangerAWS/raw/master/PIPELINE/config.yaml).
 
 3. To launch an EC2 instance and start a Cell Ranger run, cellrangerAWS
 requires the following arguments:
 
 	-s, the name of your S3 bucket
 
-	-c, the path to your config.yaml
+	-c, the path to your config file
 
 	-k, the path to the ssh key you generated earlier
 

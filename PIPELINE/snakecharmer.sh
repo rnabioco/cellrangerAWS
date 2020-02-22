@@ -16,27 +16,18 @@ get_time() {
     echo "["$(date "+%F")"]"
 }
 
-
-# Run Cell Ranger
+# Run Cell Ranger, transfer results, terminate instance
 "$snakemake" \
     --snakefile "$pipeline/Snakefile" \
     --configfile "$pipeline/$YAML" \
     --cores "$threads" \
     --latency-wait 60 \
-    &> "$log_dir/cellranger.out"
+    &> "$log_dir/cellranger.out" \
+    && echo -e "\n$(get_time) Cell Ranger run complete, check logs for any errors." \
+    && echo -e "\n$(get_time) Transferring results to $S3..." \
+    && aws s3 cp --recursive "$HOME/RESULTS" "$S3/RESULTS" \
+    && aws s3 cp --recursive "$HOME/PIPELINE" "$S3/PIPELINE" \
+    && echo -e "\n$(get_time) Terminating EC2 instance $EC2..." \
+    && aws ec2 terminate-instances --instance-ids "$EC2" > /dev/null
 
-
-# Transfer results and terminate instance
-echo -e "\n$(get_time) Cell Ranger run complete, check logs for any errors."
-
-echo -e "\n$(get_time) Transferring results to $S3..."
-
-aws s3 cp --recursive "$HOME/RESULTS" "$S3/RESULTS"
-aws s3 cp --recursive "$HOME/PIPELINE" "$S3/PIPELINE"
-
-echo -e "\n$(get_time) Terminating EC2 instance $EC2..."
-
-aws ec2 terminate-instances \
-    --instance-ids "$EC2" \
-    > /dev/null
 
