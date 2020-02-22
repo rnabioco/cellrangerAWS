@@ -1,5 +1,13 @@
 # cellrangerAWS
 
+This tutorial will cover how to use the cellrangerAWS command line tool. This
+tool automates the steps required to process scRNA-seq/CITE-seq/scVDJ-seq data
+through the Cell Ranger (10x Genomics) pipeline using an AWS EC2 instance.
+Instances launched using the cellrangerAWS tool should automatically terminate
+when the run is complete. **However, it is the responsibility of the user to 
+monitor their AWS console to ensure that instances properly terminate so they do
+not incur additional charges.**
+
 ### AWS pricing
 
 To use any resources provided by Amazon Web Services, you will need a credit
@@ -29,9 +37,19 @@ To configure your AWS account and start a Cell Ranger run, follow these steps:
 
 2. Download and install the AWS command line interface (https://aws.amazon.com/cli/).
 
-3. To link your computer to your AWS account you must create access keys using
-the IAM portal. Use the "aws configure" command to add your access key and 
-key ID to the AWS CLI.
+3. To allow the AWS CLI to issue commands to your AWS account, an access key
+must be created using the IAM portal. Once your key has been generated run the
+following command to add your key information. For security do not save an
+additional copy of your key, instead view the key in the IAM portal and paste
+the access key and key ID into terminal when prompted. Your key will be
+automatically saved in a text file in your home directory: .aws/credentials.
+If you lose your key, a new one can be generated. **It is important that your 
+AWS access key is kept private since it provides direct access to your
+account.**
+
+``` bash
+aws configure
+```
 
 4. To communicate with the EC2 instances you launch, you must create ssh keys by
 selecting "Key Pairs" from the left panel of the portal. Download and save your
