@@ -1,7 +1,6 @@
 # ===== Snakemake rules for running the 10x Cell Ranger pipeline ===============
 
 
-
 # Merge fastqs and create symlinks =============================================
 # This rule will either merge multiple fastqs into a single file or create a 
 # symlink to the original fastq. If a comma separated list of sample names is 
@@ -215,6 +214,7 @@ rule cellranger_count:
     params:
         job_name = "count",
         results  = RESULTS,
+        rna      = RNA_SAMPLES,
         adt      = ADT_SAMPLES,
         rna_ref  = RNA_REF,
     log:
@@ -246,7 +246,7 @@ rule cellranger_count:
             )
 
         # Run cellranger count just for gene expression
-        else:
+        elif params.rna:
             shell(
                 """
                 sample_csv={wildcards.sample}.csv
@@ -264,6 +264,15 @@ rule cellranger_count:
                 """
             )
 
+        # Copy output files to outer directory
+        if params.rna or params.adt:
+            sample  = params.results + "/" + wildcards.sample
+            out_dir = os.path.join(sample, outs)
+
+            shutil.copyfile(out_dir + "/web_summary.html", sample + ".html")
+            shutil.copyfile(out_dir + "/cloupe.cloupe", sample + ".cloupe")
+            shutil.copytree(out_dir + "/filtered_feature_bc_matrix", sample + "_filtered_feature_bc_matrix")
+        
         # Write output file
         with open(output[0], "w") as out:
             out.write("done\n")
@@ -324,7 +333,14 @@ rule cellranger_vdj:
                     --localmem={resources.mem_gb}
                 """
             )
-                
+        
+            # Copy output files to outer directory
+            sample  = params.results + "/" + wildcards.sample
+            out_dir = os.path.join(sample, outs)
+
+            shutil.copyfile(out_dir + "/web_summary.html", sample + ".html")
+            shutil.copyfile(out_dir + "/vloupe.vloupe", sample + ".vloupe")
+        
         # Write output file
         with open(output[0], "w") as out:
             out.write("done\n")

@@ -4,23 +4,27 @@
 GENOME:
     "tiny"
 
-# Sample prefixes for gene expression fastqs. If gene expression fastqs are not
-# being processed, leave this blank.
+# Sample prefixes for gene expression fastqs. Samples should be listed on
+# separate lines, each prefixed with a dash "-". If gene expression fastqs are
+# not being processed, leave this blank.
 RNA_SAMPLES:
     - "tinygex"
 
-# Sample prefixes for CITE-seq fastqs. If CITE-seq was not performed, leave this
-# blank.
+# Sample prefixes for CITE-seq fastqs. Samples should be listed on separate
+# lines, each prefixed with a dash "-". If CITE-seq was not performed, leave
+# this blank.
 ADT_SAMPLES:
 
 
 # List the TotalSeq catalog numbers for all antibodies used in the
-# experiment. If CITE-seq was not performed, leave this blank.
+# experiment. Antibodies should be listed on separate lines, each prefixed with
+# a dash "-". If CITE-seq was not performed, leave this blank.
 ANTIBODIES:
 
 
-# Sample prefixes for VDJ fastqs. If VDJ sequencing was not performed, leave
-# this blank.
+# Sample prefixes for VDJ fastqs. Samples should be listed on separate lines,
+# each prefixed with a dash "-". If VDJ sequencing was not performed, leave this
+# blank.
 VDJ_SAMPLES:
 
 
