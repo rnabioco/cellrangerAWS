@@ -109,10 +109,10 @@ requires the following arguments:
 
 To run the test data, download the "tiny" fastq files [here](https://github.com/rnabioco/cellrangerAWS/tree/master/DATA/tiny_data)
 and transfer to an S3 bucket. Here are example commands to run the test data
-on a c5.12xlarge instance using an S3 bucket named "my-s3-bucket":
+on a t3a.xlarge instance using an S3 bucket named "my-s3-bucket":
 
 ``` bash
-cellrangerAWS -s my-s3-bucket -c config.yaml -k ~/.ssh/mykeys.pem -t c5.12xlarge
+cellrangerAWS -s my-s3-bucket -c config.yaml -k ~/.ssh/mykeys.pem -t t3a.xlarge
 ```
 
 
