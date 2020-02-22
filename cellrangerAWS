@@ -8,6 +8,7 @@ INPUT="none"
 S3="none"
 CONFIG="none"
 KEY="none"
+EC2_TYPE="none"
 FORCE_CLEAN=false
 
 
@@ -15,7 +16,6 @@ FORCE_CLEAN=false
 MANUAL_MODE=false
 CLEAN_UP=false
 TRANSFER_DATA=true
-EC2_TYPE="c5.12xlarge"
 AMI="ami-030627e4bf9c3c41b"
 ZONE="us-west-2a"
 
@@ -28,12 +28,13 @@ USAGE
 
 OPTIONS
 -h, display this message
--i, path to local directory containing fastq files, if this option is omitted files in the S3 bucket are used
--s, name of an S3 bucket
+-i, path to local directory containing fastq files, if this option is omitted files in the S3 bucket will be used
+-s, name of S3 bucket
 -c, path to config.yaml
 -k, path to an ssh key linked to AWS account
+-t, EC2 instance type
 
--t, EC2 instance type (default is "$EC2_TYPE")
+-z, EC2 availability zone (default is "$ZONE")
 -a, ID for machine image configured to run cellranger (default is "$AMI")
 -f, terminate running instances and start a new job
 -m, run in manual mode, this transfers data to an EC2 instance and exits
@@ -41,12 +42,9 @@ OPTIONS
 }
 
 
-
-
-
 # Parse arguments =============================================================
 
-while getopts ":hi:s:c:k:t:a:fm" args
+while getopts ":hi:s:c:k:t:z:a:fm" args
 do
     case "$args" in
         h)
@@ -58,6 +56,7 @@ do
         c) CONFIG="$OPTARG" ;;
         k) KEY="$OPTARG" ;;
         t) EC2_TYPE="$OPTARG" ;;
+	z) ZONE="$OPTARG" ;;
         a) AMI="$OPTARG" ;;
         f) CLEAN_UP=true ;;
         m) MANUAL_MODE=true ;;
@@ -74,9 +73,9 @@ do
     esac
 done
 
-if [[ "$S3" == "none" || "$CONFIG" == "none" || "$KEY" == "none" ]]
+if [[ "$S3" == "none" || "$CONFIG" == "none" || "$KEY" == "none" || "$EC2_TYPE" == "none" ]]
 then
-    echo -e "\nERROR: Arguments are required for -s, -c, and -k."
+    echo -e "\nERROR: Arguments are required for -s, -c, -k, and -t."
 
     usage
     exit 1
@@ -88,10 +87,7 @@ then
 fi
 
 
-
-
-
-# Check instance/volume status =================================================
+# Check resource status ========================================================
 
 get_time() {
     echo "["$(date "+%F %T")"]"
@@ -138,10 +134,7 @@ terminated_ec2() {
 }
 
 
-
-
-
-# Check for running EC2 instances ==============================================
+# Check for running instances ==================================================
 
 check_for_ec2() {
     local running_ec2s=$(
@@ -175,10 +168,7 @@ check_for_ec2() {
 }
 
 
-
-
-
-# Transfer data to S3 bucket ===================================================
+# Transfer data to bucket ======================================================
 
 transfer_to_s3() {
     local input="$1"
@@ -197,14 +187,10 @@ transfer_to_s3() {
 }
 
 
-
-
-
-# Launch EC2 instance ==========================================================
-# When using default VPC the instance does not have internet access. To resolve
-# this create new VPC, security group, subnet, and internet gateway. Activate
-# public IP for subnet, activate public DNS for VPC, attach VPC to internet
-# gateway, modify route table for VPC.
+# Launch instance ==============================================================
+# By default instances launched with the aws cli will not have internet access.
+# To resolve this update the inbound rules for the security group to allow
+# traffic from "My IP" or "Anywhere".
 
 launch_ec2() {
     local s3="$1"
@@ -261,10 +247,7 @@ launch_ec2() {
 }
 
 
-
-
-
-# Retrieve public DNS for EC2 instance and check connectivity ==================
+# Retrieve public DNS and check connectivity ===================================
 
 get_dns() {
     local ec2="$1"
@@ -318,10 +301,7 @@ get_dns() {
 }
 
 
-
-
-
-# Transfer data from S3 bucket to EC2 instance =================================
+# Transfer data from bucket to instance ========================================
 
 transfer_to_ec2() {
     local s3="$1"
@@ -330,14 +310,14 @@ transfer_to_ec2() {
     # Configure AWS on EC2 instance
     local iam_id=$(
         cat "$HOME/.aws/credentials" \
-            | grep -A 2 "default" \
+            | grep -E -A 2 "^\[default\]$" \
             | grep "aws_access_key_id" \
             | grep -E -o "[[:alnum:]]+$"
     )
 
     local iam_key=$(
         cat "$HOME/.aws/credentials" \
-            | grep -A 2 "default" \
+            | grep -E -A 2 "^\[default\]$" \
             | grep "aws_secret_access_key" \
             | grep -E -o "[[:alnum:]/\+]+$"
     )
@@ -345,10 +325,10 @@ transfer_to_ec2() {
     local aws="/usr/local/bin/aws"
 
     ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ec2_ssh" \
-        "$aws" configure set aws_access_key_id "$iam_id"
+        "$aws configure set aws_access_key_id $iam_id"
 
     ssh -i "$KEY" "$ec2_ssh" \
-        "$aws" configure set aws_secret_access_key "$iam_key"
+        "$aws configure set aws_secret_access_key $iam_key"
 
     # Transfer files to EC2 instance
     local s3_fqs=$(
@@ -366,17 +346,13 @@ transfer_to_ec2() {
     for fq in $s3_fqs
     do 
         ssh -i "$KEY" "$ec2_ssh" \
-            "$aws" s3 cp "$s3/$fq" "~/DATA" \
-            > /dev/null
+            "$aws s3 cp $s3/$fq ~/DATA > /dev/null"
     done
    
     wait
 
     sleep 30
 }
-
-
-
 
 
 # Run Cell Ranger ==============================================================
@@ -404,10 +380,7 @@ run_cellranger() {
 }
 
 
-
-
-
-# Terminate EC2 instance =======================================================
+# Terminate instance ===========================================================
 
 terminate_ec2() {
     local ec2="$1"
@@ -423,9 +396,6 @@ terminate_ec2() {
     # Keep this quoting pattern so multiple IDs are displayed on one line
     echo -e "\n$(get_time) EC2 instances "$ec2" have been terminated."
 }
-
-
-
 
 
 # Main =========================================================================
