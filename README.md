@@ -1,6 +1,15 @@
 # cellrangerAWS
 
-This tutorial will require you to access three separate AWS portals:
+To use any resources provided by Amazon Web Services, you will need a credit
+card. Please carefully review the pricing guides for the following services.
+When launching any EC2 instance, you will be charged for the total time the
+instance is running, regardless of use.
+
+1. Simple Storage Service, S3 (https://aws.amazon.com/s3/pricing/)
+
+2. Elastic Compute Cloud, EC2 (https://aws.amazon.com/ec2/pricing/on-demand/)
+
+This tutorial will require you to access the following AWS portals:
 
 1. Simple Storage Service, S3 (https://docs.aws.amazon.com/AmazonS3/latest/gsg/GetStartedWithS3.html)
 
@@ -8,7 +17,7 @@ This tutorial will require you to access three separate AWS portals:
 
 3. Identity and Access Management, IAM (https://docs.aws.amazon.com/IAM/latest/UserGuide/introduction.html)
 
-To configure your AWS account and start a Cell Ranger run follow these steps:
+To configure your AWS account and start a Cell Ranger run, follow these steps:
 
 1. First create an AWS account (https://aws.amazon.com/console/).
 
@@ -18,9 +27,9 @@ To configure your AWS account and start a Cell Ranger run follow these steps:
 the IAM portal. Use the "aws configure" command to add your access key and 
 key ID to the AWS CLI.
 
-4. To communicate with the EC2 instances that you launch, you must create ssh
-keys by selecting "Key Pairs" from the left panel of the portal. Download and
-save your key in a safe place on your computer.
+4. To communicate with the EC2 instances you launch, you must create ssh keys by
+selecting "Key Pairs" from the left panel of the portal. Download and save your
+keys in a safe place.
 
 5. To connect with your instances you must modify the default EC2 security
 group. To do this select "Security Groups" from the left panel of the portal.
