@@ -1,13 +1,17 @@
 # cellrangerAWS
 
+### AWS pricing
+
 To use any resources provided by Amazon Web Services, you will need a credit
-card. Please carefully review the pricing guides for the following services.
-When launching any EC2 instance, you will be charged for the total time the
-instance is running, regardless of use.
+card. When launching any EC2 instance, you will be charged for the total time 
+the instance is running, regardless of use. Please carefully review the 
+following pricing guides:
 
 1. Simple Storage Service, S3 (https://aws.amazon.com/s3/pricing/)
 
 2. Elastic Compute Cloud, EC2 (https://aws.amazon.com/ec2/pricing/on-demand/)
+
+### AWS Documentation
 
 This tutorial will require you to access the following AWS portals:
 
@@ -16,6 +20,8 @@ This tutorial will require you to access the following AWS portals:
 2. Elastic Compute Cloud, EC2 (https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/concepts.html)
 
 3. Identity and Access Management, IAM (https://docs.aws.amazon.com/IAM/latest/UserGuide/introduction.html)
+
+### Configuring your AWS account
 
 To configure your AWS account and start a Cell Ranger run, follow these steps:
 
@@ -41,14 +47,17 @@ your account from multiple IP addresses (this is less secure).
 run Cell Ranger. To request a limit increase follow these instructions:
 https://aws.amazon.com/premiumsupport/knowledge-center/ec2-instance-limit/
 
-7. To run Cell Ranger, the input fastq files must be uploaded to an S3 bucket.
-To do this go to the S3 portal, select "Create Bucket", and drag your files into
-the window.
+### Using the cellrangerAWS command line tool
 
-8. Add your sample names to the config.yaml. There is a sample yaml in the
+To use the cellrangerAWS command line tool, follow these steps:
+
+1. The input fastq files must be uploaded to an S3 bucket. To do this go to the
+S3 portal, select "Create Bucket", and drag your files into the window.
+
+2. Add your sample names to the config.yaml. There is a sample yaml in the
 PIPELINE directory of this repository.
 
-9. To start a Cell Ranger run there are four arguments you need to pass to 
+3. To start a Cell Ranger run there are four arguments you need to pass to 
 cellrangerAWS:
 
 	-s, the name of your S3 bucket
