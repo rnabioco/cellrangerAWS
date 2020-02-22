@@ -7,19 +7,19 @@ card. When launching any EC2 instance, you will be charged for the total time
 the instance is running, regardless of use. Please carefully review the 
 following pricing guides:
 
-1. Simple Storage Service, S3 (https://aws.amazon.com/s3/pricing/)
+* Simple Storage Service, S3 (https://aws.amazon.com/s3/pricing/)
 
-2. Elastic Compute Cloud, EC2 (https://aws.amazon.com/ec2/pricing/on-demand/)
+* Elastic Compute Cloud, EC2 (https://aws.amazon.com/ec2/pricing/on-demand/)
 
 ### AWS Documentation
 
 This tutorial will require you to access the following AWS portals:
 
-1. Simple Storage Service, S3 (https://docs.aws.amazon.com/AmazonS3/latest/gsg/GetStartedWithS3.html)
+* Simple Storage Service, S3 (https://docs.aws.amazon.com/AmazonS3/latest/gsg/GetStartedWithS3.html)
 
-2. Elastic Compute Cloud, EC2 (https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/concepts.html)
+* Elastic Compute Cloud, EC2 (https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/concepts.html)
 
-3. Identity and Access Management, IAM (https://docs.aws.amazon.com/IAM/latest/UserGuide/introduction.html)
+* Identity and Access Management, IAM (https://docs.aws.amazon.com/IAM/latest/UserGuide/introduction.html)
 
 ### Configuring your AWS account
 
