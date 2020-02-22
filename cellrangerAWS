@@ -2,7 +2,6 @@
 
 set -o nounset -o pipefail -o errexit
 
-
 # Inputs
 INPUT="none"
 S3="none"
@@ -11,14 +10,12 @@ KEY="none"
 EC2_TYPE="none"
 FORCE_CLEAN=false
 
-
 # Defaults
 MANUAL_MODE=false
 CLEAN_UP=false
 TRANSFER_DATA=true
-AMI="ami-030627e4bf9c3c41b"
+AMI="ami-0b9988dd2db6ea4c2"
 ZONE="us-west-2a"
-
 
 # Usage message
 usage() {
@@ -389,9 +386,9 @@ run_cellranger() {
     # Add S3 bucket and EC2 instance ID to snakecharmer.sh
     # Do not use "/" as sed delimiter since these are present in the bucket name
     ssh -i "$KEY" "$ec2_ssh" bash <<EOF
-        "sed -i s#BUCKET#$s3#g ~/PIPELINE/snakecharmer.sh"
-        "sed -i s/INSTANCE/$ec2/g ~/PIPELINE/snakecharmer.sh"
-        "sed -i s/CONFIG/$yaml/g ~/PIPELINE/snakecharmer.sh"
+        sed -i s#BUCKET#$s3#g ~/PIPELINE/snakecharmer.sh
+        sed -i s/INSTANCE/$ec2/g ~/PIPELINE/snakecharmer.sh
+        sed -i s/CONFIG/$yaml/g ~/PIPELINE/snakecharmer.sh
 EOF
     
     # Run Cell Ranger

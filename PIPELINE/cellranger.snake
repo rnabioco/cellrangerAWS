@@ -267,7 +267,7 @@ rule cellranger_count:
         # Copy output files to outer directory
         if params.rna or params.adt:
             sample  = params.results + "/" + wildcards.sample
-            out_dir = os.path.join(sample, outs)
+            out_dir = os.path.join(sample, "outs")
 
             shutil.copyfile(out_dir + "/web_summary.html", sample + ".html")
             shutil.copyfile(out_dir + "/cloupe.cloupe", sample + ".cloupe")
@@ -336,7 +336,7 @@ rule cellranger_vdj:
         
             # Copy output files to outer directory
             sample  = params.results + "/" + wildcards.sample
-            out_dir = os.path.join(sample, outs)
+            out_dir = os.path.join(sample, "outs")
 
             shutil.copyfile(out_dir + "/web_summary.html", sample + ".html")
             shutil.copyfile(out_dir + "/vloupe.vloupe", sample + ".vloupe")
