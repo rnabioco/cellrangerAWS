@@ -100,7 +100,7 @@ After downloading, make the file executable and copy to your bin directory using
 the following commands:
 
 ``` bash
-chmod +x cellrangerAWS
+chmod 750 cellrangerAWS
 ```
 
 For Linux:
