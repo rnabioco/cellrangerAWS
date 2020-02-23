@@ -18,7 +18,7 @@ following pricing guides:
 
 * Elastic Compute Cloud, [EC2](https://aws.amazon.com/ec2/pricing/on-demand/)
 
-### AWS Documentation
+### AWS documentation
 
 This tutorial will require you to interact with several AWS portals. Please
 review the basic documentation for the following portals:
@@ -29,10 +29,22 @@ review the basic documentation for the following portals:
 
 * Identity and Access Management, [IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/introduction.html)
 
+### Availability zones
+
+The resources provided by AWS are divided into availability zones. The
+availability zone can be selected using a drop-down menu in the top right
+corner of the console next to the "Support" menu. Keep the availability zone the
+same when configuring your account and when launching EC2 instances. This 
+includes when you create an ssh key pair, modify security group settings, create
+an S3 bucket, and launch an EC2 instance. If you change settings for one 
+availability zone, they will not apply to other zones. It should also be noted
+that when looking at your EC2 console, instances will only be listed for your
+current availability zone.
+
 ### Configuring your AWS account
 
 The cellrangerAWS tool requires that you install the AWS command line interface
-and configure your account to provide access to AWS resources. To configure your
+and configure your account to allow access to AWS resources. To configure your
 account, follow these steps:
 
 1. Create an AWS account [here](https://aws.amazon.com/console/).
@@ -57,8 +69,8 @@ aws configure
 To do this navigate to the EC2 portal and select "Key Pairs" from the left
 panel. After creating your key pair, download and save. ssh key pairs are usually
 stored in a folder in your home directory (~/.ssh/). Your key pair should be
-kept private, since anyone with the key pair will be able to remotely access
-your instances.
+kept private, anyone with the key pair will be able to remotely access your
+instances. 
 
 5. To connect with your EC2 instances you must modify the default EC2 security
 group, which controls the inbound traffic allowed to reach your instances. To do
@@ -83,13 +95,33 @@ running instance. After the Cell Ranger run is complete (or exits), the output
 files are transferred back to the S3 bucket and the instance is terminated. To
 use the cellrangerAWS tool, follow these steps:
 
-1. The input fastq files must be uploaded to an S3 bucket. To do this, go to the
+1. cellrangerAWS can be downloaded [here](https://github.com/rnabioco/cellrangerAWS/raw/master/cellrangerAWS).
+After downloading, make the file executable and copy to your bin directory using
+the following commands:
+
+``` bash
+chmod +x cellrangerAWS
+```
+
+For Linux:
+
+``` bash
+cp cellrangerAWS ~/.local/bin
+```
+
+For Mac:
+
+``` bash
+cp cellrangerAWS ~/.local/bin
+```
+
+2. The input fastq files must be uploaded to an S3 bucket. To do this, go to the
 S3 portal and select "Create Bucket". Keep all the default settings and create
 your bucket. Drag your fastq files into the bucket, a progress bar should appear
 at the bottom of the screen. Depending on the size of your files, this could
 take several hours.
 
-2. The snakemake pipeline that runs on the instance requires a configuration
+3. The snakemake pipeline that runs on the instance requires a configuration
 file specifying the genome and the sample names. The sample name should be the
 fastq file prefix that is shared by all files generated for the capture. For
 gene expression data there should be eight separate fastq files that share the 
@@ -97,7 +129,7 @@ same prefix. In the config file, the sample names must be listed with one name
 per line. A template config file that can be used to run the test data (tiny) 
 provided by 10x genomics can be downloaded [here](https://github.com/rnabioco/cellrangerAWS/raw/master/PIPELINE/config.yaml).
 
-3. To launch an EC2 instance and start a Cell Ranger run, cellrangerAWS
+4. To launch an EC2 instance and start a Cell Ranger run, cellrangerAWS
 requires the following arguments:
 
 	-s, the name of your S3 bucket
@@ -108,6 +140,8 @@ requires the following arguments:
 
 	-t, the type of EC2 instance you want to use
 
+	-z, the availability zone (default is us-west-2)
+
 To run the test data, download the "tiny" fastq files [here](https://github.com/rnabioco/cellrangerAWS/tree/master/DATA/tiny_data)
 and transfer to an S3 bucket. Here are example commands to run the test data
 on a t3a.xlarge instance using an S3 bucket named "my-s3-bucket":
@@ -115,5 +149,4 @@ on a t3a.xlarge instance using an S3 bucket named "my-s3-bucket":
 ``` bash
 cellrangerAWS -s my-s3-bucket -c config.yaml -k ~/.ssh/mykeys.pem -t t3a.xlarge
 ```
-
 
