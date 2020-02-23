@@ -70,7 +70,12 @@ To do this navigate to the EC2 portal and select "Key Pairs" from the left
 panel. After creating your key pair, download and save. ssh key pairs are usually
 stored in a folder in your home directory (~/.ssh/). Your key pair should be
 kept private, anyone with the key pair will be able to remotely access your
-instances. 
+instances. After saving your key pair, the permissions must be changed using the
+following command:
+
+``` bash
+chmod 600 ~/.ssh/my_ssh_key.pem
+```
 
 5. To connect with your EC2 instances you must modify the default EC2 security
 group, which controls the inbound traffic allowed to reach your instances. To do
@@ -109,12 +114,6 @@ For Linux:
 cp cellrangerAWS ~/.local/bin
 ```
 
-For Mac:
-
-``` bash
-cp cellrangerAWS ~/.local/bin
-```
-
 2. The input fastq files must be uploaded to an S3 bucket. To do this, go to the
 S3 portal and select "Create Bucket". Keep all the default settings and create
 your bucket. Drag your fastq files into the bucket, a progress bar should appear
@@ -147,6 +146,6 @@ and transfer to an S3 bucket. Here are example commands to run the test data
 on a t3a.xlarge instance using an S3 bucket named "my-s3-bucket":
 
 ``` bash
-cellrangerAWS -s my-s3-bucket -c config.yaml -k ~/.ssh/mykeys.pem -t t3a.xlarge
+cellrangerAWS -s my-s3-bucket -c config.yaml -k ~/.ssh/my_ssh_key.pem -t t3a.xlarge
 ```
 
