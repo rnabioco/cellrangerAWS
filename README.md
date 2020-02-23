@@ -109,11 +109,8 @@ the following commands:
 
 ``` bash
 chmod 750 cellrangerAWS
-```
 
-	For Linux:
-
-``` bash
+# For linux
 cp cellrangerAWS ~/.local/bin
 ```
 
