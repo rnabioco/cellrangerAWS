@@ -5,8 +5,7 @@ tool automates the steps required to process scRNA-seq/CITE-seq/scVDJ-seq data
 through the Cell Ranger (10x Genomics) pipeline using an AWS EC2 instance.
 Instances launched using the cellrangerAWS tool should automatically terminate
 when the run is complete. **However, it is the responsibility of the user to 
-monitor their AWS console to ensure that instances properly terminate so they do
-not incur additional charges.**
+monitor their AWS console to ensure that instances properly terminate.**
 
 ### AWS pricing
 
@@ -56,8 +55,10 @@ aws configure
 
 4. To communicate with the EC2 instances you launch, you must create ssh keys. 
 To do this navigate to the EC2 portal and select "Key Pairs" from the left
-panel. After creating your key pair, download and save. ssh keys are usually
-stored in a folder in your home directory (~/.ssh/).
+panel. After creating your key pair, download and save. ssh key pairs are usually
+stored in a folder in your home directory (~/.ssh/). Your key pair should be
+kept private, since anyone with the key pair will be able to remotely access
+your instances.
 
 5. To connect with your EC2 instances you must modify the default EC2 security
 group, which controls the inbound traffic allowed to reach your instances. To do

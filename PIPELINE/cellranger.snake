@@ -266,13 +266,13 @@ rule cellranger_count:
 
         # Copy output files to outer directory
         if params.rna or params.adt:
-            sample  = params.results + "/" + wildcards.sample
-            out_dir = os.path.join(sample, "outs")
+            sample = wildcards.sample
+            res_dir = params.results + "/"
+            out_dir = os.path.join(res_dir, sample, "outs")
 
-            shutil.copyfile(sample + "/_log", sample + ".log")
-            shutil.copyfile(out_dir + "/web_summary.html", sample + ".html")
-            shutil.copyfile(out_dir + "/cloupe.cloupe", sample + ".cloupe")
-            shutil.copytree(out_dir + "/filtered_feature_bc_matrix", sample + "_filtered_feature_bc_matrix")
+            shutil.copyfile(out_dir + "/web_summary.html", res_dir + "reports/" + sample + ".html")
+            shutil.copyfile(out_dir + "/cloupe.cloupe", res_dir + "loupe_files/" + sample + ".cloupe")
+            shutil.copytree(out_dir + "/filtered_feature_bc_matrix", res_dir + "count_matrices/" + sample + "_filtered_feature_bc_matrix")
         
         # Write output file
         with open(output[0], "w") as out:
@@ -336,12 +336,12 @@ rule cellranger_vdj:
             )
         
             # Copy output files to outer directory
-            sample  = params.results + "/" + wildcards.sample
-            out_dir = os.path.join(sample, "outs")
+            sample = wildcards.sample
+            res_dir = params.results + "/"
+            out_dir = os.path.join(res_dir, sample, "outs")
 
-            shutil.copyfile(sample + "/_log", sample + ".log")
-            shutil.copyfile(out_dir + "/web_summary.html", sample + ".html")
-            shutil.copyfile(out_dir + "/vloupe.vloupe", sample + ".vloupe")
+            shutil.copyfile(out_dir + "/web_summary.html", res_dir + "reports/" + sample + ".html")
+            shutil.copyfile(out_dir + "/vloupe.vloupe", res_dir + "loupe_files/" + sample + ".vloupe")
         
         # Write output file
         with open(output[0], "w") as out:
