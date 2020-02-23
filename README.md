@@ -59,7 +59,7 @@ in a text file in your home directory (~/.aws/credentials). If you lose your
 key, a new one can be generated. **It is important that your AWS access key is
 kept private since it provides direct access to your account.**
 
-	Once your key pair has been generated run the following command to add your key
+	Once your key has been generated, run the following command to add your key
 information:
 
 ``` bash
@@ -103,9 +103,10 @@ running instance. After the Cell Ranger run is complete (or exits), the output
 files are transferred back to the S3 bucket and the instance is terminated. To
 use the cellrangerAWS tool, follow these steps:
 
-1. cellrangerAWS can be downloaded by right-clicking this [link](https://github.com/rnabioco/cellrangerAWS/raw/master/cellrangerAWS)
-and selecting "Save Link As...". After downloading, make the file executable and
-copy to your bin directory using the following commands:
+1. cellrangerAWS can be downloaded by right-clicking and saving this
+[link](https://github.com/rnabioco/cellrangerAWS/raw/master/cellrangerAWS).
+After downloading, make the file executable and copy to your bin directory using
+the following commands:
 
 ``` bash
 chmod 750 cellrangerAWS
@@ -125,8 +126,9 @@ file specifying the genome and the sample names. The sample name should be the
 fastq file prefix that is shared by all files generated for the capture. For
 gene expression data there should be eight separate fastq files that share the 
 same prefix. In the config file, the sample names must be listed with one name
-per line. A template config file that can be used to run the test data (tiny) 
-provided by 10x genomics can be downloaded [here](https://github.com/rnabioco/cellrangerAWS/raw/master/PIPELINE/config.yaml).
+per line. A template config file that can be used to run the test (tiny) data
+provided by 10x genomics can be downloaded by right-clicking and saving this
+[link](https://github.com/rnabioco/cellrangerAWS/raw/master/PIPELINE/config.yaml).
 
 4. To launch an EC2 instance and start a Cell Ranger run, cellrangerAWS
 requires the following arguments:
