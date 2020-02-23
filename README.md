@@ -14,20 +14,20 @@ card. When launching any EC2 instance, you will be charged for the total time
 the instance is running, regardless of use. Please carefully review the 
 following pricing guides:
 
-* Simple Storage Service, [S3](https://aws.amazon.com/s3/pricing/)
+* [Simple Storage Service (S3)](https://aws.amazon.com/s3/pricing/)
 
-* Elastic Compute Cloud, [EC2](https://aws.amazon.com/ec2/pricing/on-demand/)
+* [Elastic Compute Cloud (EC2)](https://aws.amazon.com/ec2/pricing/on-demand/)
 
 ### AWS documentation
 
 This tutorial will require you to interact with several AWS portals. Please
 review the basic documentation for the following portals:
 
-* Simple Storage Service, [S3](https://docs.aws.amazon.com/AmazonS3/latest/gsg/GetStartedWithS3.html)
+* [Simple Storage Service (S3)](https://docs.aws.amazon.com/AmazonS3/latest/gsg/GetStartedWithS3.html)
 
-* Elastic Compute Cloud, [EC2](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/concepts.html)
+* [Elastic Compute Cloud (EC2)](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/concepts.html)
 
-* Identity and Access Management, [IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/introduction.html)
+* [Identity and Access Management (IAM)](https://docs.aws.amazon.com/IAM/latest/UserGuide/introduction.html)
 
 ### Availability zones
 
@@ -103,9 +103,9 @@ running instance. After the Cell Ranger run is complete (or exits), the output
 files are transferred back to the S3 bucket and the instance is terminated. To
 use the cellrangerAWS tool, follow these steps:
 
-1. cellrangerAWS can be downloaded [here](https://github.com/rnabioco/cellrangerAWS/raw/master/cellrangerAWS).
-After downloading, make the file executable and copy to your bin directory using
-the following commands:
+1. cellrangerAWS can be downloaded by right-clicking this [link](https://github.com/rnabioco/cellrangerAWS/raw/master/cellrangerAWS)
+and selecting "Save Link As...". After downloading, make the file executable and
+copy to your bin directory using the following commands:
 
 ``` bash
 chmod 750 cellrangerAWS
