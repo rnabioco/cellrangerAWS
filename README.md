@@ -49,7 +49,7 @@ account, follow these steps:
 
 1. Create an AWS account [here](https://aws.amazon.com/console/).
 
-2. Download and install the AWS command line interface, version 2 [here](https://aws.amazon.com/cli/).
+2. Download and install the [AWS command line interface](https://aws.amazon.com/cli/).
 
 3. To allow the AWS CLI to issue commands to your AWS account, an access key
 must be created using the IAM portal. For security do not save an additional
