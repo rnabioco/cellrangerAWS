@@ -126,7 +126,7 @@ file specifying the genome and the sample names. The sample name should be the
 fastq file prefix that is shared by all files generated for the capture. For
 gene expression data there should be eight separate fastq files that share the 
 same prefix. In the config file, the sample names must be listed with one name
-per line. A template config file that can be used to run the test (tiny) data
+per line. A template config file that can be used to run the test ("tiny") data
 provided by 10x genomics can be downloaded by right-clicking and saving this
 [link](https://github.com/rnabioco/cellrangerAWS/raw/master/PIPELINE/config.yaml).
 
