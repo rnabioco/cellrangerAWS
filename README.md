@@ -52,14 +52,15 @@ account, follow these steps:
 2. Download and install the AWS command line interface, version 2 [here](https://aws.amazon.com/cli/).
 
 3. To allow the AWS CLI to issue commands to your AWS account, an access key
-must be created using the IAM portal. Once your key has been generated run the
-following command to add your key information. For security do not save an
-additional copy of your key, instead view the key in the IAM portal and paste
-the access key and key ID into terminal when prompted. Your key will be
-automatically saved in a text file in your home directory (~/.aws/credentials).
-If you lose your key, a new one can be generated. **It is important that your 
-AWS access key is kept private since it provides direct access to your
-account.**
+must be created using the IAM portal. For security do not save an additional
+copy of your key, instead view the key in the IAM portal and paste the access
+key and key ID into terminal when prompted. Your key will be automatically saved
+in a text file in your home directory (~/.aws/credentials). If you lose your
+key, a new one can be generated. **It is important that your AWS access key is
+kept private since it provides direct access to your account.**
+
+	Once your key pair has been generated run the following command to add your key
+information:
 
 ``` bash
 aws configure
@@ -70,7 +71,9 @@ To do this navigate to the EC2 portal and select "Key Pairs" from the left
 panel. After creating your key pair, download and save. ssh key pairs are usually
 stored in a folder in your home directory (~/.ssh/). Your key pair should be
 kept private, anyone with the key pair will be able to remotely access your
-instances. After saving your key pair, the permissions must be changed using the
+instances. 
+
+	After saving your key pair, the permissions must be changed using the
 following command:
 
 ``` bash
@@ -108,7 +111,7 @@ the following commands:
 chmod 750 cellrangerAWS
 ```
 
-For Linux:
+	For Linux:
 
 ``` bash
 cp cellrangerAWS ~/.local/bin
