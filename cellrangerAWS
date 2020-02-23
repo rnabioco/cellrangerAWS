@@ -14,7 +14,7 @@ FORCE_CLEAN=false
 MANUAL_MODE=false
 CLEAN_UP=false
 TRANSFER_DATA=true
-AMI="ami-0b67d5a208a5ff22d"
+AMI="ami-026c091dac1f523af"
 ZONE="us-west-2a"
 
 # Usage message
@@ -391,9 +391,9 @@ EOF
     
     # Run Cell Ranger
     ssh -f -i "$KEY" "$ec2_ssh" \
-        "~/PIPELINE/snakecharmer.sh &"
+        "nohup ~/PIPELINE/snakecharmer.sh &"
 
-    echo -e "\n$(get_time) Beginning Cell Ranger run..."
+    echo -e "\n$(get_time) Beginning Cell Ranger run. When the run is complete, results will be transferred to $s3 and the instance will be terminated. After the results have been tranferred, the Cell Ranger logs must be checked to confirm the run was successful."
 }
 
 
