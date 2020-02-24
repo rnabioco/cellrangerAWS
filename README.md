@@ -58,8 +58,9 @@ in a text file in your home directory (~/.aws/credentials). If you lose your
 key, a new one can be generated. **It is important that your AWS access key is
 kept private since it provides direct access to your account.**
 
-	Once your key has been generated, run the following command to add your key
-information:
+	Once your key has been generated, run the following command to add your
+key information. You will also be asked to provide a default output format,
+which needs to be "json".
 
 ``` bash
 aws configure
