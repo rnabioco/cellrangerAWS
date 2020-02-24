@@ -11,8 +11,7 @@ monitor their AWS console to ensure that instances properly terminate.**
 
 To use any resources provided by Amazon Web Services, you will need a credit
 card. When launching any EC2 instance, you will be charged for the total time 
-the instance is running, regardless of use. Please carefully review the 
-following pricing guides:
+the instance is running, regardless of use. Review the following pricing guides:
 
 * [Simple Storage Service (S3)](https://aws.amazon.com/s3/pricing/)
 
@@ -20,8 +19,8 @@ following pricing guides:
 
 ### AWS documentation
 
-This tutorial will require you to interact with several AWS portals. Please
-review the basic documentation for the following portals:
+This tutorial will require you to interact with several AWS portals. Review the
+basic documentation for the following portals:
 
 * [Simple Storage Service (S3)](https://docs.aws.amazon.com/AmazonS3/latest/gsg/GetStartedWithS3.html)
 
