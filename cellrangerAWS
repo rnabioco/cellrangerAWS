@@ -393,7 +393,7 @@ EOF
     ssh -f -i "$KEY" "$ec2_ssh" \
         "nohup ~/PIPELINE/snakecharmer.sh &"
 
-    echo -e "\n$(get_time) Beginning Cell Ranger run. When the run is complete, results will be transferred to $s3 and the instance will be terminated. After the results have been tranferred, the Cell Ranger logs must be checked to confirm the run was successful."
+    echo -e "\n$(get_time) Beginning Cell Ranger run. When the run is complete, results will be transferred to $s3 and the instance will be terminated. After the results have been transferred, the Cell Ranger logs must be checked to confirm the run was successful."
 }
 
 
