@@ -145,11 +145,13 @@ requires the following arguments:
 
 ### Running the test data
 
-Before trying to run your samples, you should first try the test data. To do
-this download the test ("tiny") fastq files
+Before running your samples, you should first try the test data. To do this
+download the test ("tiny") fastq files
 [here](https://github.com/rnabioco/cellrangerAWS/tree/master/DATA/tiny_data)
-and transfer to an S3 bucket. Here are example commands to run the test data
-on a t3a.xlarge instance using an S3 bucket named "my-s3-bucket":
+and transfer to an S3 bucket. You can use the config.yaml that you downloaded
+in step 3 from above. Here are example commands to run the test data on a
+t3a.xlarge instance (4 CPUs). You just need to add the name of your S3 bucket
+and the path to your ssh key (-s and -k options).
 
 ``` bash
 cellrangerAWS -s my-s3-bucket -c config.yaml -k ~/.ssh/my_ssh_key.pem -t t3a.xlarge
