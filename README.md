@@ -143,7 +143,11 @@ requires the following arguments:
 
 	-z, the availability zone (default is us-west-2)
 
-To run the test data, download the "tiny" fastq files [here](https://github.com/rnabioco/cellrangerAWS/tree/master/DATA/tiny_data)
+### Running the test data
+
+Before trying to run your samples, you should first try the test data. To do
+this download the test ("tiny") fastq files
+[here](https://github.com/rnabioco/cellrangerAWS/tree/master/DATA/tiny_data)
 and transfer to an S3 bucket. Here are example commands to run the test data
 on a t3a.xlarge instance using an S3 bucket named "my-s3-bucket":
 
