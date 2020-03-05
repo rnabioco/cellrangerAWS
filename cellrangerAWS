@@ -14,7 +14,7 @@ FORCE_CLEAN=false
 MANUAL_MODE=false
 CLEAN_UP=false
 TRANSFER_DATA=true
-AMI="ami-080371f56ab2089b9"
+AMI="ami-0deb42a61c482a7ed"
 ZONE="us-west-2a"
 
 # Usage message
