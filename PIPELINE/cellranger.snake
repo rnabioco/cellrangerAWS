@@ -169,6 +169,7 @@ rule create_sample_csv:
             # Trim fastq names
             R1_fqs = [os.path.basename(x) for x in R1_fqs]
             R1_fqs = [re.sub(params.fq_regex, "", x) for x in R1_fqs]
+            R1_fqs = set(R1_fqs)
 
             # Create sample csv
             if not os.path.isfile(sam_csv):
