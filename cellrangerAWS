@@ -14,7 +14,6 @@ FORCE_CLEAN=false
 MANUAL_MODE=false
 CLEAN_UP=false
 TRANSFER_DATA=true
-AMI="ami-0deb42a61c482a7ed"
 ZONE="us-west-2a"
 
 # Usage message
@@ -32,7 +31,6 @@ OPTIONS
 -t, EC2 instance type
 
 -z, EC2 availability zone (default is "$ZONE")
--a, ID for machine image configured to run cellranger (default is "$AMI")
 -f, terminate running instances and start a new job
 -m, run in manual mode, this transfers data to an EC2 instance and exits
     """
@@ -54,7 +52,6 @@ do
         k) KEY="$OPTARG" ;;
         t) EC2_TYPE="$OPTARG" ;;
 	z) ZONE="$OPTARG" ;;
-        a) AMI="$OPTARG" ;;
         f) CLEAN_UP=true ;;
         m) MANUAL_MODE=true ;;
         :)
@@ -81,6 +78,32 @@ fi
 if [[ "$INPUT" == "none" ]]
 then
     TRANSFER_DATA=false
+fi
+
+
+# Set AMI for instance =========================================================
+
+avail_zone=$(echo "$ZONE" | awk '{gsub("[a-z]$", "", $1); print}')
+
+case "$avail_zone" in
+    "us-east-1") AMI="none" ;;
+    "us-east-2") AMI="none" ;;
+    "us-west-1") AMI="ami-0085426f3fbae0113" ;;
+    "us-west-2") AMI="ami-0deb42a61c482a7ed" ;;
+
+    *)
+        echo -e "ERROR: A machine image does not exist for the $ZONE availability zone. Select a different availability zone with -z."
+
+        exit 1
+        ;;
+
+esac
+
+if [[ "$AMI" == "none" ]]
+then
+    echo -e "ERROR: A machine image does not exist for the $ZONE availability zone. Select a different availability zone with -z."
+
+    exit 1
 fi
 
 
