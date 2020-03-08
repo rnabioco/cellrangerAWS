@@ -23,16 +23,11 @@ USAGE
 "$0" [OPTIONS]
 
 OPTIONS
--h, display this message
--i, path to local directory containing fastq files, if this option is omitted files in the S3 bucket will be used
 -s, name of S3 bucket
 -c, path to config.yaml
 -k, path to an ssh key linked to AWS account
 -t, EC2 instance type
-
 -z, EC2 availability zone (default is "$ZONE")
--f, terminate running instances and start a new job
--m, run in manual mode, this transfers data to an EC2 instance and exits
     """
 }
 
@@ -46,14 +41,11 @@ do
             usage
             exit 0
             ;;
-        i) INPUT="$OPTARG" ;;
         s) S3="s3://$OPTARG" ;;
         c) CONFIG="$OPTARG" ;;
         k) KEY="$OPTARG" ;;
         t) EC2_TYPE="$OPTARG" ;;
 	z) ZONE="$OPTARG" ;;
-        f) CLEAN_UP=true ;;
-        m) MANUAL_MODE=true ;;
         :)
             echo -e "\nERROR: -$OPTARG requires an argument"
 
@@ -89,7 +81,7 @@ case "$avail_zone" in
     "us-east-1") AMI="none" ;;
     "us-east-2") AMI="none" ;;
     "us-west-1") AMI="ami-0085426f3fbae0113" ;;
-    "us-west-2") AMI="ami-0232f2bfc0670c4e4" ;;
+    "us-west-2") AMI="ami-0338c8bf4de26d676" ;;
 
     *)
         echo -e "ERROR: A machine image does not exist for the $ZONE availability zone. Select a different availability zone with -z."
@@ -182,7 +174,7 @@ check_for_ec2() {
 	    exit 1
 
 	else
-            echo -e "\n$(get_time) WARNING: EC2 instances from previous jobs are still running, to terminate these instances include the -f option."
+            echo -e "\n$(get_time) WARNING: EC2 instances from previous jobs are still running."
         fi
     fi
 }
@@ -368,7 +360,8 @@ transfer_to_ec2() {
     ssh -i "$KEY" "$ec2_ssh" \
         "$aws configure set aws_secret_access_key $iam_key"
 
-    scp -i "$KEY" "$CONFIG" "$ec2_ssh:~/PIPELINE"
+    scp -i "$KEY" "$CONFIG" "$ec2_ssh:~/PIPELINE" \
+        > /dev/null
 
     # Transfer files to EC2 instance
     #local s3_fqs=$(
@@ -475,10 +468,10 @@ main() {
     #    "$S3" \
     #    "$EC2_SSH"
 
-    #if "$MANUAL_MODE"
-    #then
-    #    exit 0
-    #fi
+    if "$MANUAL_MODE"
+    then
+        exit 0
+    fi
 
     # Run Cell Ranger
     run_cellranger \

@@ -1,4 +1,6 @@
-#! /bin/bash
+#! /usr/bin/env bash
+
+set -o nounset -o pipefail -o errexit
 
 snakemake="$HOME/.local/bin/snakemake"
 res_dir="$HOME/RESULTS"
@@ -10,23 +12,18 @@ S3="BUCKET"
 EC2="INSTANCE"
 YAML="CONFIG"
 
-mkdir -p "$log_dir"
-
 get_time() {
-    echo "["$(date "+%F")"]"
+    echo "["$(date "+%F %T")"]"
 }
 
 
 # Transfer files to EC2 instance
-local s3_fqs=$(
-    aws s3 ls "$s3" \
+s3_fqs=($(
+    aws s3 ls "$S3" \
         | grep -E -o "[[:alnum:]_\-\.]+.fastq.gz"
-)
+))
 
-echo -e "\n$(get_time) Transferring the following files from $s3 to EC2 instance:"
-echo "$s3_fqs"
-
-s3_fqs=("$s3_fqs")
+echo -e "\n$(get_time) Transferring fastq files from $S3 to EC2 instance:"
 
 for fq in "${s3_fqs[@]}"
 do
@@ -48,11 +45,16 @@ echo -e "\n$(get_time) Beginning Cell Ranger run."
     --latency-wait 60 \
     &> "$log_dir/cellranger.out"
 
+
 # Transfer results and terminate instance
+echo -e "\n$(get_time) Cell Ranger run complete. Transferring results to $S3."
+
 aws s3 cp --recursive "$HOME/RESULTS" "$S3/RESULTS"
 aws s3 cp --recursive "$HOME/PIPELINE" "$S3/PIPELINE"
 
 aws ec2 terminate-instances \
     --instance-ids "$EC2" \
     > /dev/null
+
+
 
