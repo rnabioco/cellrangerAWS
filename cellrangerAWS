@@ -8,11 +8,9 @@ S3="none"
 CONFIG="none"
 KEY="none"
 EC2_TYPE="none"
-FORCE_CLEAN=false
 
 # Defaults
 MANUAL_MODE=false
-CLEAN_UP=false
 TRANSFER_DATA=true
 ZONE="us-west-2a"
 
@@ -24,6 +22,7 @@ USAGE
 
 OPTIONS
 -s, name of S3 bucket
+-i, path to local directory containing fastq files, if this option is omitted files in the S3 bucket will be used
 -c, path to config.yaml
 -k, path to an ssh key linked to AWS account
 -t, EC2 instance type
@@ -34,18 +33,16 @@ OPTIONS
 
 # Parse arguments =============================================================
 
-while getopts ":hi:s:c:k:t:z:a:fm" args
+while getopts ":i:s:c:k:t:z:m" args
 do
     case "$args" in
-        h)
-            usage
-            exit 0
-            ;;
+        i) INPUT="$OPTARG" ;;
         s) S3="s3://$OPTARG" ;;
         c) CONFIG="$OPTARG" ;;
         k) KEY="$OPTARG" ;;
         t) EC2_TYPE="$OPTARG" ;;
 	z) ZONE="$OPTARG" ;;
+	m) MANUAL_MODE=true ;;
         :)
             echo -e "\nERROR: -$OPTARG requires an argument"
 
@@ -157,25 +154,7 @@ check_for_ec2() {
     # Terminate EC2 instances from previous jobs
     if [[ "$running_ec2s" =~ "InstanceId" ]]
     then
-        local ec2_ids=$(
-            echo "$running_ec2s" \
-	        | grep "InstanceId" \
-                | grep -E -o "i\-[[:alnum:]]+"
-        )
-
-	if "$CLEAN_UP"
-        then
-            terminate_ec2 "$ec2_ids"
-	
-        elif "$FORCE_CLEAN"
-        then
-            echo -e "\n$(get_time) ERROR: EC2 instances from previous jobs are still running, to terminate these instances and start a new job include the -f option."
-
-	    exit 1
-
-	else
-            echo -e "\n$(get_time) WARNING: EC2 instances from previous jobs are still running."
-        fi
+        echo -e "\n$(get_time) WARNING: EC2 instances from previous jobs are still running."
     fi
 }
 
@@ -331,60 +310,6 @@ get_dns() {
 }
 
 
-# Transfer data from bucket to instance ========================================
-
-transfer_to_ec2() {
-    local s3="$1"
-    local ec2_ssh="$2"
-
-    # Configure AWS on EC2 instance
-    local iam_id=$(
-        cat "$HOME/.aws/credentials" \
-            | grep -E -A 2 "^\[default\]$" \
-            | grep "aws_access_key_id" \
-            | grep -E -o "[[:alnum:]]+$"
-    )
-
-    local iam_key=$(
-        cat "$HOME/.aws/credentials" \
-            | grep -E -A 2 "^\[default\]$" \
-            | grep "aws_secret_access_key" \
-            | grep -E -o "[[:alnum:]/\+]+$"
-    )
-
-    local aws="/usr/local/bin/aws"
-
-    ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ec2_ssh" \
-        "$aws configure set aws_access_key_id $iam_id"
-
-    ssh -i "$KEY" "$ec2_ssh" \
-        "$aws configure set aws_secret_access_key $iam_key"
-
-    scp -i "$KEY" "$CONFIG" "$ec2_ssh:~/PIPELINE" \
-        > /dev/null
-
-    # Transfer files to EC2 instance
-    #local s3_fqs=$(
-    #    aws s3 ls "$s3" \
-    #        | grep -E -o "[[:alnum:]_\-\.]+.fastq.gz"
-    #)
-
-    #echo -e "\n$(get_time) Transferring the following files from $s3 to EC2 instance:"
-    #echo "$s3_fqs"
-
-    # Leave s3_fqs unquoted
-    #for fq in $s3_fqs
-    #do 
-    #    ssh -i "$KEY" "$ec2_ssh" \
-    #        "$aws s3 cp $s3/$fq ~/DATA > /dev/null"
-    #done
-   
-    #wait
-
-    #sleep 30
-}
-
-
 # Run Cell Ranger ==============================================================
 
 run_cellranger() {
@@ -433,7 +358,6 @@ EOF
     ssh -f -i "$KEY" "$ec2_ssh" \
         "nohup ~/PIPELINE/run.sh &"
 
-    #echo -e "\n$(get_time) Beginning Cell Ranger run. When the run is complete, results will be transferred to $s3 and the instance will be terminated. After the results have been transferred, the Cell Ranger logs must be checked to confirm the run was successful."
     echo -e "\n$(get_time) Transferring data from $s3 to instance $ec2. The Cell Ranger run will begin after data transfer is complete. After the run has finished, the results will be transferred back to $s3 and the instance will be terminated. The Cell Ranger logs must be checked to confirm the run was successful."
 }
 
@@ -462,11 +386,6 @@ main() {
 
     # Check EC2 instance connectivity and retrieve EC2_SSH
     get_dns "$EC2"
-
-    # Transfer data from S3 bucket to EC2 instance
-    #transfer_to_ec2 \
-    #    "$S3" \
-    #    "$EC2_SSH"
 
     if "$MANUAL_MODE"
     then
