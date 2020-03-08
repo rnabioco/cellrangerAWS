@@ -344,7 +344,8 @@ run_cellranger() {
     ssh -i "$KEY" "$ec2_ssh" \
         "$aws configure set aws_secret_access_key $iam_key"
 
-    scp -i "$KEY" "$CONFIG" "$ec2_ssh:~/PIPELINE"
+    scp -i "$KEY" "$CONFIG" "$ec2_ssh:~/PIPELINE" \
+        > /dev/null
 
     # Add S3 bucket and EC2 instance ID to run.sh
     # Do not use "/" as sed delimiter since these are present in the bucket name
@@ -365,7 +366,7 @@ EOF
 # Main =========================================================================
 
 main() {
-    # Terminate instances from previous runs
+    # Check for running instances
     check_for_ec2
 
     # Transfer data to S3 bucket
