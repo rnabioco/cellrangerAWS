@@ -89,7 +89,7 @@ case "$avail_zone" in
     "us-east-1") AMI="none" ;;
     "us-east-2") AMI="none" ;;
     "us-west-1") AMI="ami-0085426f3fbae0113" ;;
-    "us-west-2") AMI="ami-0deb42a61c482a7ed" ;;
+    "us-west-2") AMI="ami-0232f2bfc0670c4e4" ;;
 
     *)
         echo -e "ERROR: A machine image does not exist for the $ZONE availability zone. Select a different availability zone with -z."
