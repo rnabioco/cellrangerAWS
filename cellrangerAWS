@@ -373,8 +373,7 @@ main() {
     then
         transfer_to_s3 \
             "$INPUT" \
-            "$S3" \
-	    "$EC2_SSH"
+            "$S3"
     fi
 
     # Launch EC2 instance and retrieve ec2_id
