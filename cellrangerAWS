@@ -77,7 +77,7 @@ avail_zone=$(echo "$ZONE" | awk '{gsub("[a-z]$", "", $1); print}')
 case "$avail_zone" in
     "us-east-1") AMI="none" ;;
     "us-east-2") AMI="none" ;;
-    "us-west-1") AMI="ami-0085426f3fbae0113" ;;
+    "us-west-1") AMI="ami-060eff800d5f8b826" ;;
     "us-west-2") AMI="ami-0338c8bf4de26d676" ;;
 
     *)
