@@ -141,7 +141,7 @@ requires the following arguments:
 
 	-t, the type of EC2 instance you want to use
 
-	-z, the availability zone (default is us-west-2)
+	-z, the availability zone (default is us-west-2a)
 
 ### Running the test data
 
