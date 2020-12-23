@@ -13,6 +13,7 @@ EC2_TYPE="none"
 MANUAL_MODE=false
 TRANSFER_DATA=true
 ZONE="us-west-2a"
+IAM="S3FullAccessEC2"
 
 # Usage message
 usage() {
@@ -27,6 +28,7 @@ OPTIONS
 -k, path to an ssh key linked to AWS account
 -t, EC2 instance type
 -z, EC2 availability zone (default is "$ZONE")
+-g, IAM instance profile name (default is "$IAM")
     """
 }
 
@@ -42,6 +44,7 @@ do
         k) KEY="$OPTARG" ;;
         t) EC2_TYPE="$OPTARG" ;;
 	z) ZONE="$OPTARG" ;;
+    g) IAM="$OPTARG" ;;
 	m) MANUAL_MODE=true ;;
         :)
             echo -e "\nERROR: -$OPTARG requires an argument"
@@ -207,6 +210,7 @@ launch_ec2() {
     local ec2_type="$3"
     local zone="$4"
     local key_name=$(basename -s .pem "$KEY")
+    local iam="$5"
 
     echo -e "\n$(get_time) Launching EC2 $ec2_type instance..."
 
@@ -246,6 +250,7 @@ launch_ec2() {
             --placement AvailabilityZone="$zone" \
             --block-device-mapping DeviceName="$root_dev",Ebs={VolumeSize="$vol_size"} \
             --key-name "$key_name" \
+            --iam-instance-profile Name="$iam" \
             | grep -E -o "InstanceId\": \"i\-[[:alnum:]]+" \
             | grep -E -o "i\-[[:alnum:]]+"
     )
@@ -321,30 +326,9 @@ run_cellranger() {
     local aws="/usr/local/bin/aws"
     local yaml=$(basename "$yaml")
 
-    # Configure AWS on EC2 instance
-    local iam_id=$(
-        cat "$HOME/.aws/credentials" \
-            | grep -E -A 2 "^\[default\]$" \
-            | grep "aws_access_key_id" \
-            | grep -E -o "[[:alnum:]]+$"
-    )
-
-    local iam_key=$(
-        cat "$HOME/.aws/credentials" \
-            | grep -E -A 2 "^\[default\]$" \
-            | grep "aws_secret_access_key" \
-            | grep -E -o "[[:alnum:]/\+]+$"
-    )
-
     local aws="/usr/local/bin/aws"
 
-    ssh -o "StrictHostKeyChecking no" -i "$KEY" "$ec2_ssh" \
-        "$aws configure set aws_access_key_id $iam_id"
-
-    ssh -i "$KEY" "$ec2_ssh" \
-        "$aws configure set aws_secret_access_key $iam_key"
-
-    scp -i "$KEY" "$CONFIG" "$ec2_ssh:~/PIPELINE" \
+    scp -q -o "StrictHostKeyChecking=no" -i "$KEY" "$CONFIG" "$ec2_ssh:~/PIPELINE" \
         > /dev/null
 
     # Add S3 bucket and EC2 instance ID to run.sh
@@ -382,7 +366,8 @@ main() {
         "$S3" \
         "$AMI" \
         "$EC2_TYPE" \
-        "$ZONE"
+        "$ZONE" \
+        "$IAM"
 
     # Check EC2 instance connectivity and retrieve EC2_SSH
     get_dns "$EC2"
