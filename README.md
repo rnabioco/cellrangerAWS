@@ -88,7 +88,16 @@ Under "Source" select "My IP". If desired, you can also specify a range of IP
 addresses. Selecting "Anywhere" will allow traffic from all IP addresses (this
 is less secure).
 
-6. By default there are limits placed on the EC2 resources that a user has
+6. You will need to grant your EC2 instances access to your S3 bucket by 
+generating a new IAM role. To do this, navigate to the IAM Management
+Console. Select Roles, click create role, select AWS service, select EC2,
+click Next: Permissions, then filter for ‘AmazonS3FullAccess’ then click checkbox 
+next to it, click Next: Tags (leave blank or add tag if desired), click Next: Review, 
+enter a Role name such as ‘S3FullAccessEC2’, then finally click Create role. 
+You will supply the Role name to the cellrangerAWS tool at the command
+line. 
+
+7. By default there are limits placed on the EC2 resources that a user has
 access to. EC2 limits are based on the total number of virtual CPUs that
 can be used. For example to launch an c5.24xlarge intance (96 CPUs) your EC2
 instance limit must be >96. A good starting point is to request a limit of 200.
@@ -142,6 +151,9 @@ requires the following arguments:
 	-t, the type of EC2 instance you want to use
 
 	-z, the availability zone (default is us-west-2a)
+    
+    -g, the name of the IAM role you generated to allow EC2 access to your 
+        S3 bucket (default is S3FullAccessEC2) 
 
 ### Running the test data
 
