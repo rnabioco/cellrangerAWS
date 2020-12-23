@@ -89,8 +89,8 @@ addresses. Selecting "Anywhere" will allow traffic from all IP addresses (this
 is less secure).
 
 6. You will need to grant your EC2 instances access to your S3 bucket by 
-generating an new IAM role. To do this, naviate to the IAM Management
-Console. Select Roles, click create role, select AWS serice, select EC2,
+generating a new IAM role. To do this, navigate to the IAM Management
+Console. Select Roles, click create role, select AWS service, select EC2,
 click Next: Permissions, then filter for ‘AmazonS3FullAccess’ then click checkbox 
 next to it, click Next: Tags (leave blank or add tag if desired), click Next: Review, 
 enter a Role name such as ‘S3FullAccessEC2’, then finally click Create role. 
